@@ -1,4 +1,5 @@
 import Foundation
+import ApplicationServices
 import XCTest
 @testable import TabGroups
 
@@ -37,5 +38,40 @@ final class GroupStoreTests: XCTestCase {
 
     private func makeGroup(_ name: String) -> TabGroup {
         TabGroup(name: name, bounds: WindowBounds(x: 10, y: 20, width: 800, height: 600), members: [])
+    }
+}
+
+final class WindowGroupFactoryTests: XCTestCase {
+    func testFirstSelectedWindowProvidesGroupBoundsAndInitialSelection() {
+        let first = makeWindow("Calendar", title: "Week", x: 40, key: "first")
+        let second = makeWindow("Mail", title: "Inbox", x: 900, key: "second")
+
+        let group = WindowGroupFactory.make(from: [first, second], displayIdentifier: "main")
+
+        XCTAssertEqual(group?.bounds, first.bounds)
+        XCTAssertEqual(group?.selectedMemberID, first.reference.id)
+        XCTAssertEqual(group?.members.map(\.id), [first.reference.id, second.reference.id])
+        XCTAssertEqual(group?.name, "Calendar Group")
+    }
+
+    func testGroupRequiresAtLeastTwoWindows() {
+        let first = makeWindow("Calendar", title: "Week", x: 40, key: "first")
+
+        XCTAssertNil(WindowGroupFactory.make(from: [first], displayIdentifier: "main"))
+    }
+
+    private func makeWindow(_ appName: String, title: String, x: Double, key: String) -> DiscoveredWindow {
+        let reference = WindowReference(
+            bundleIdentifier: "com.example.\(appName.lowercased())",
+            processID: 123,
+            title: title,
+            lastKnownBounds: WindowBounds(x: x, y: 20, width: 800, height: 600)
+        )
+        return DiscoveredWindow(
+            id: key,
+            appName: appName,
+            reference: reference,
+            window: AXWindow(element: AXUIElementCreateSystemWide(), processID: 123)
+        )
     }
 }
