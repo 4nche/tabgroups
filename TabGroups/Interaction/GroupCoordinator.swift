@@ -1,12 +1,11 @@
 import AppKit
-import Observation
+import Combine
 
-@Observable
-final class GroupCoordinator {
+final class GroupCoordinator: ObservableObject {
     let store: GroupStore
     let catalog: WindowCatalog
-    var statusMessage: String?
-    var availableWindows: [DiscoveredWindow] = []
+    @Published var statusMessage: String?
+    @Published var availableWindows: [DiscoveredWindow] = []
 
     private let windowController: WindowController
     private let strip = TabStripCoordinator()

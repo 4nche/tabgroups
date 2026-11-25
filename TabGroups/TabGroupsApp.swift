@@ -2,11 +2,11 @@ import SwiftUI
 
 @main
 struct TabGroupsApp: App {
-    @State private var coordinator: GroupCoordinator
+    @StateObject private var coordinator: GroupCoordinator
 
     init() {
         let coordinator = GroupCoordinator()
-        _coordinator = State(initialValue: coordinator)
+        _coordinator = StateObject(wrappedValue: coordinator)
         coordinator.start()
     }
 
@@ -17,7 +17,7 @@ struct TabGroupsApp: App {
         .menuBarExtraStyle(.menu)
 
         Window("Tab Groups", id: "groups") {
-            GroupsWindowView(coordinator: coordinator)
+            GroupsWindowView(coordinator: coordinator, store: coordinator.store)
         }
         .defaultSize(width: 440, height: 340)
     }

@@ -3,7 +3,7 @@ import SwiftUI
 
 struct StatusMenuView: View {
     @Environment(\.openWindow) private var openWindow
-    let coordinator: GroupCoordinator
+    @ObservedObject var coordinator: GroupCoordinator
 
     var body: some View {
         Button("Show Groups") {
@@ -25,18 +25,19 @@ struct StatusMenuView: View {
 }
 
 struct GroupsWindowView: View {
-    @Bindable var coordinator: GroupCoordinator
+    @ObservedObject var coordinator: GroupCoordinator
+    @ObservedObject var store: GroupStore
 
     var body: some View {
         Group {
-            if coordinator.store.groups.isEmpty {
+            if store.groups.isEmpty {
                 ContentUnavailableView {
                     Label("No tab groups yet", systemImage: "rectangle.on.rectangle")
                 } description: {
                     Text("Hold Shift and drag one app window onto another to create a group.")
                 }
             } else {
-                List(coordinator.store.groups) { group in
+                List(store.groups) { group in
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(group.name).font(.headline)

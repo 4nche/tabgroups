@@ -1,10 +1,9 @@
 import Foundation
-import Observation
+import Combine
 
-@Observable
-final class GroupStore {
-    private(set) var groups: [TabGroup] = []
-    private(set) var loadError: Error?
+final class GroupStore: ObservableObject {
+    @Published private(set) var groups: [TabGroup] = []
+    @Published private(set) var loadError: Error?
 
     private let fileURL: URL
     private let fileManager: FileManager
