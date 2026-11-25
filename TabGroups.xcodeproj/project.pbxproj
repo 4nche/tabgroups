@@ -21,6 +21,7 @@
 		A10000000000000000000015 /* WindowRestorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* WindowRestorer.swift */; };
 		A10000000000000000000016 /* PermissionHelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* PermissionHelpView.swift */; };
 		A10000000000000000000017 /* UnmatchedWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* UnmatchedWindowView.swift */; };
+		A10000000000000000000018 /* DragFeedbackPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* DragFeedbackPanel.swift */; };
 		B10000000000000000000001 /* GroupStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* GroupStoreTests.swift */; };
 		B10000000000000000000002 /* WindowReferenceMatchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* WindowReferenceMatchingTests.swift */; };
 		B10000000000000000000004 /* TabGroups.app in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* TabGroups.app */; };
@@ -42,6 +43,7 @@
 		A20000000000000000000015 /* WindowRestorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowRestorer.swift; sourceTree = "<group>"; };
 		A20000000000000000000016 /* PermissionHelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionHelpView.swift; sourceTree = "<group>"; };
 		A20000000000000000000017 /* UnmatchedWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnmatchedWindowView.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* DragFeedbackPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragFeedbackPanel.swift; sourceTree = "<group>"; };
 		A20000000000000000000020 /* TabGroups.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TabGroups.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B20000000000000000000001 /* GroupStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupStoreTests.swift; sourceTree = "<group>"; };
 		B20000000000000000000002 /* WindowReferenceMatchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowReferenceMatchingTests.swift; sourceTree = "<group>"; };
@@ -55,7 +57,7 @@
 		A30000000000000000000006 /* WindowControl */ = {isa = PBXGroup; path = WindowControl; sourceTree = "<group>"; children = (A20000000000000000000006, A20000000000000000000007, A20000000000000000000008, A20000000000000000000009, ); };
 		A30000000000000000000007 /* TabStrip */ = {isa = PBXGroup; path = TabStrip; sourceTree = "<group>"; children = (A20000000000000000000010, A20000000000000000000011, A20000000000000000000012, ); };
 		A30000000000000000000008 /* Interaction, Lifecycle, Settings */ = {isa = PBXGroup; path = .; sourceTree = "<group>"; children = (A30000000000000000000009, A30000000000000000000010, A30000000000000000000011, A20000000000000000000001, A20000000000000000000002, ); };
-		A30000000000000000000009 /* Interaction */ = {isa = PBXGroup; path = Interaction; sourceTree = "<group>"; children = (A20000000000000000000013, A20000000000000000000014, ); };
+		A30000000000000000000009 /* Interaction */ = {isa = PBXGroup; path = Interaction; sourceTree = "<group>"; children = (A20000000000000000000013, A20000000000000000000014, A20000000000000000000018, ); };
 		A30000000000000000000010 /* Lifecycle */ = {isa = PBXGroup; path = Lifecycle; sourceTree = "<group>"; children = (A20000000000000000000015, ); };
 		A30000000000000000000011 /* Settings */ = {isa = PBXGroup; path = Settings; sourceTree = "<group>"; children = (A20000000000000000000016, A20000000000000000000017, ); };
 		B30000000000000000000001 /* TabGroupsTests */ = {isa = PBXGroup; path = TabGroupsTests; sourceTree = "<group>"; children = (B20000000000000000000001, B20000000000000000000002, ); };
@@ -67,7 +69,7 @@
 		A50000000000000000000002 /* App configuration list */ = {isa = XCConfigurationList; buildConfigurations = (A80000000000000000000003, A80000000000000000000004, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 		B50000000000000000000002 /* Test configuration list */ = {isa = XCConfigurationList; buildConfigurations = (B80000000000000000000002, B80000000000000000000003, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 
-		A60000000000000000000001 /* App Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000009, A10000000000000000000010, A10000000000000000000011, A10000000000000000000012, A10000000000000000000013, A10000000000000000000014, A10000000000000000000015, A10000000000000000000016, A10000000000000000000017, ); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000001 /* App Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000009, A10000000000000000000010, A10000000000000000000011, A10000000000000000000012, A10000000000000000000013, A10000000000000000000014, A10000000000000000000015, A10000000000000000000016, A10000000000000000000017, A10000000000000000000018, ); runOnlyForDeploymentPostprocessing = 0; };
 		A60000000000000000000002 /* App Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		A60000000000000000000003 /* App Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		B60000000000000000000001 /* Test Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (B10000000000000000000001, B10000000000000000000002, ); runOnlyForDeploymentPostprocessing = 0; };

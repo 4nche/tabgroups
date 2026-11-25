@@ -38,12 +38,13 @@ final class GroupCoordinator: ObservableObject {
         statusMessage = store.loadError?.localizedDescription
         refreshAvailableWindows()
         let monitor = WindowDragMonitor(catalog: catalog) { [weak self] source, target in
-            self?.createOrExtendGroup(source: source, target: target)
+            guard let self else { return DragDropResult(message: "Tab Groups is unavailable", succeeded: false) }
+            return self.createOrExtendGroup(source: source, target: target)
         }
         dragMonitor = monitor
+        monitor.start()
         if AccessibilityPermission.isGranted {
             hadPermission = true
-            monitor.start()
             restoreAvailableGroups()
         } else {
             statusMessage = "Grant Accessibility permission to group and control app windows."
@@ -121,10 +122,10 @@ final class GroupCoordinator: ObservableObject {
         } catch { statusMessage = error.localizedDescription }
     }
 
-    private func createOrExtendGroup(source: DiscoveredWindow, target: DiscoveredWindow) {
+    private func createOrExtendGroup(source: DiscoveredWindow, target: DiscoveredWindow) -> DragDropResult {
         guard AccessibilityPermission.isGranted else {
             statusMessage = "Enable Accessibility permission before grouping windows."
-            return
+            return DragDropResult(message: statusMessage ?? "Accessibility permission is required", succeeded: false)
         }
         refreshAvailableWindows()
         var targetGroup = store.groups.first { group in
@@ -141,7 +142,7 @@ final class GroupCoordinator: ObservableObject {
                return false
            }) {
             statusMessage = "Those windows are already in the same group."
-            return
+            return DragDropResult(message: statusMessage ?? "Those windows are already grouped", succeeded: false)
         }
 
         if targetGroup == nil {
@@ -169,7 +170,9 @@ final class GroupCoordinator: ObservableObject {
             group.bounds = target.bounds
             targetGroup = group
         }
-        guard let group = targetGroup else { return }
+        guard let group = targetGroup else {
+            return DragDropResult(message: "Couldn’t identify the target group", succeeded: false)
+        }
         detach(source, fromOtherGroupsExcept: group.id)
 
         // Move the background member first and the drop target last so it stays visible.
@@ -181,8 +184,15 @@ final class GroupCoordinator: ObservableObject {
         _ = target.window.apply(group.bounds)
         if let selected = group.members.first(where: { $0.id == group.selectedMemberID }),
            let live = (try? windowController.resolve(selected)) { live.window.raise() }
-        do { try store.upsert(group); show(group); statusMessage = "Window group created." }
-        catch { statusMessage = error.localizedDescription }
+        do {
+            try store.upsert(group)
+            show(group)
+            statusMessage = "Window group created."
+            return DragDropResult(message: "Grouped \(source.appName) with \(target.appName)", succeeded: true)
+        } catch {
+            statusMessage = error.localizedDescription
+            return DragDropResult(message: error.localizedDescription, succeeded: false)
+        }
     }
 
     private func detach(_ window: DiscoveredWindow, fromOtherGroupsExcept keepID: UUID) {

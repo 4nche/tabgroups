@@ -1,21 +1,28 @@
 import AppKit
 
+struct DragDropResult {
+    var message: String
+    var succeeded: Bool
+}
+
 final class WindowDragMonitor {
     private let catalog: WindowCatalog
+    private let feedback = DragFeedbackPanel()
     private var monitors: [Any] = []
     private var source: DiscoveredWindow?
     private var startedWithShift = false
     private var startPoint: NSPoint = .zero
-    private let onDrop: (DiscoveredWindow, DiscoveredWindow) -> Void
+    private var dragMoved = false
+    private let onDrop: (DiscoveredWindow, DiscoveredWindow) -> DragDropResult
 
-    init(catalog: WindowCatalog, onDrop: @escaping (DiscoveredWindow, DiscoveredWindow) -> Void) {
+    init(catalog: WindowCatalog, onDrop: @escaping (DiscoveredWindow, DiscoveredWindow) -> DragDropResult) {
         self.catalog = catalog
         self.onDrop = onDrop
     }
 
     func start() {
         guard monitors.isEmpty else { return }
-        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseUp]
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
         if let monitor = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
             self?.handle(event)
         }) { monitors.append(monitor) }
@@ -29,24 +36,58 @@ final class WindowDragMonitor {
         monitors.forEach(NSEvent.removeMonitor)
         monitors.removeAll()
         source = nil
+        feedback.hide()
     }
 
     private func handle(_ event: NSEvent) {
-        let shift = event.modifierFlags.contains(.shift)
         if event.type == .leftMouseDown {
-            startedWithShift = shift
+            guard event.modifierFlags.contains(.shift) else { return }
+            startedWithShift = true
+            dragMoved = false
             startPoint = NSEvent.mouseLocation
-            source = shift ? window(at: NSEvent.mouseLocation) : nil
+            source = window(at: startPoint)
+            let message: String
+            let kind: DragFeedbackKind
+            if !AccessibilityPermission.isGranted {
+                message = "Enable Accessibility to read and group windows"
+                kind = .warning
+            } else if let source {
+                message = "Dragging \(source.appName) — drop on another window"
+                kind = .active
+            } else {
+                message = "Shift detected, but no app window was found"
+                kind = .warning
+            }
+            feedback.present(message, kind: kind, at: startPoint)
             return
         }
+
+        guard startedWithShift else { return }
+        let currentPoint = NSEvent.mouseLocation
+        if event.type == .leftMouseDragged {
+            if hypot(currentPoint.x - startPoint.x, currentPoint.y - startPoint.y) > 12 { dragMoved = true }
+            if dragMoved { feedback.follow(currentPoint) }
+            return
+        }
+
         guard event.type == .leftMouseUp else { return }
-        defer { source = nil; startedWithShift = false }
-        let endPoint = NSEvent.mouseLocation
-        guard startedWithShift, shift, let source,
-              hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y) > 18 else { return }
-        let target = window(at: endPoint, excluding: source.id)
-        guard let target, target.id != source.id else { return }
-        onDrop(source, target)
+        defer { source = nil; startedWithShift = false; dragMoved = false }
+        if hypot(currentPoint.x - startPoint.x, currentPoint.y - startPoint.y) > 12 { dragMoved = true }
+        guard dragMoved else { feedback.hide(); return }
+        guard let source else {
+            feedback.present("Couldn’t identify the source window", kind: .warning, at: currentPoint, hideAfter: 2)
+            return
+        }
+        guard let target = window(at: currentPoint, excluding: source.id), target.id != source.id else {
+            feedback.present("Drop over another app window to group it", kind: .warning, at: currentPoint, hideAfter: 2)
+            return
+        }
+
+        let result = onDrop(source, target)
+        feedback.present(result.message,
+                         kind: result.succeeded ? .success : .warning,
+                         at: currentPoint,
+                         hideAfter: 2)
     }
 
     private func window(at point: NSPoint, excluding: String? = nil) -> DiscoveredWindow? {
