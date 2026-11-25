@@ -1,5 +1,32 @@
+import ApplicationServices
 import AppKit
 import Combine
+
+private final class WindowGeometryObserverContext {
+    weak var coordinator: GroupCoordinator?
+    let groupID: UUID
+    let memberID: UUID
+
+    init(coordinator: GroupCoordinator, groupID: UUID, memberID: UUID) {
+        self.coordinator = coordinator
+        self.groupID = groupID
+        self.memberID = memberID
+    }
+}
+
+private struct WindowGeometryObserverRegistration {
+    let observer: AXObserver
+    let source: CFRunLoopSource
+    let context: WindowGeometryObserverContext
+    let groupID: UUID
+    let processID: pid_t
+}
+
+private let windowGeometryObserverCallback: AXObserverCallback = { _, _, _, refcon in
+    guard let refcon else { return }
+    let context = Unmanaged<WindowGeometryObserverContext>.fromOpaque(refcon).takeUnretainedValue()
+    context.coordinator?.scheduleWindowBoundsSync(groupID: context.groupID, memberID: context.memberID)
+}
 
 final class GroupCoordinator: ObservableObject {
     let store: GroupStore
@@ -10,11 +37,12 @@ final class GroupCoordinator: ObservableObject {
     private let strip = TabStripCoordinator()
     private let windowScanQueue = DispatchQueue(label: "com.4nche.TabGroups.window-scan", qos: .userInitiated)
     private var restorer: WindowRestorer?
-    private var boundsTimer: Timer?
+    private var windowRefreshTimer: Timer?
     private var windowScanInProgress = false
     private var windowScanCompletions: [([DiscoveredWindow]) -> Void] = []
+    private var geometryObservers: [UUID: WindowGeometryObserverRegistration] = [:]
+    private var pendingBoundsSyncs: [UUID: DispatchWorkItem] = [:]
     private var started = false
-    private var hadPermission = false
 
     init(store: GroupStore = GroupStore(), catalog: WindowCatalog = WindowCatalog()) {
         self.store = store
@@ -37,15 +65,14 @@ final class GroupCoordinator: ObservableObject {
         started = true
         statusMessage = store.loadError?.localizedDescription
         if AccessibilityPermission.isGranted {
-            hadPermission = true
             restoreAvailableGroups()
         } else {
             statusMessage = "Grant Accessibility permission to group and control app windows."
         }
         restorer = WindowRestorer { [weak self] in self?.restoreAvailableGroups() }
         restorer?.start()
-        boundsTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.observeActiveWindowBounds()
+        windowRefreshTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.refreshAvailableWindows()
         }
     }
 
@@ -73,6 +100,9 @@ final class GroupCoordinator: ObservableObject {
                 guard let self else { return }
                 self.availableWindows = windows
                 self.windowScanInProgress = false
+                if AccessibilityPermission.isGranted {
+                    self.store.groups.forEach(self.configureGeometryObservers)
+                }
                 let completions = self.windowScanCompletions
                 self.windowScanCompletions.removeAll()
                 completions.forEach { $0(windows) }
@@ -149,6 +179,7 @@ final class GroupCoordinator: ObservableObject {
         if group.members.isEmpty {
             do { try store.removeGroup(id: groupID) } catch { statusMessage = error.localizedDescription }
             strip.hide(groupID: groupID)
+            removeGeometryObservers(groupID: groupID)
             return
         }
         if group.selectedMemberID == memberID { group.selectedMemberID = group.members.first?.id }
@@ -162,6 +193,7 @@ final class GroupCoordinator: ObservableObject {
     func deleteGroup(_ group: TabGroup) {
         do { try store.removeGroup(id: group.id) } catch { statusMessage = error.localizedDescription }
         strip.hide(groupID: group.id)
+        removeGeometryObservers(groupID: group.id)
     }
 
     func reassign(memberID: UUID, to windowID: String) {
@@ -189,6 +221,7 @@ final class GroupCoordinator: ObservableObject {
             if group.members.isEmpty {
                 try? store.removeGroup(id: group.id)
                 strip.hide(groupID: group.id)
+                removeGeometryObservers(groupID: group.id)
             } else {
                 if !group.members.contains(where: { $0.id == group.selectedMemberID }) { group.selectedMemberID = group.members.first?.id }
                 do {
@@ -199,6 +232,95 @@ final class GroupCoordinator: ObservableObject {
                 }
             }
         }
+    }
+
+    private func configureGeometryObservers(for group: TabGroup) {
+        let memberIDs = Set(group.members.map(\.id))
+        let staleIDs = geometryObservers.compactMap { memberID, registration in
+            registration.groupID == group.id && !memberIDs.contains(memberID) ? memberID : nil
+        }
+        staleIDs.forEach(removeGeometryObserver)
+
+        for member in group.members {
+            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows),
+                  let processID = live.reference.processID.map(pid_t.init) else {
+                if geometryObservers[member.id]?.groupID == group.id { removeGeometryObserver(member.id) }
+                continue
+            }
+            if let existing = geometryObservers[member.id],
+               existing.groupID == group.id, existing.processID == processID { continue }
+            removeGeometryObserver(member.id)
+
+            var observer: AXObserver?
+            guard AXObserverCreate(processID, windowGeometryObserverCallback, &observer) == .success,
+                  let observer else { continue }
+            let context = WindowGeometryObserverContext(coordinator: self, groupID: group.id, memberID: member.id)
+            let contextPointer = Unmanaged.passUnretained(context).toOpaque()
+            let moved = AXObserverAddNotification(observer, live.window.element, kAXMovedNotification as CFString, contextPointer)
+            let resized = AXObserverAddNotification(observer, live.window.element, kAXResizedNotification as CFString, contextPointer)
+            guard moved == .success || resized == .success else { continue }
+            let source = AXObserverGetRunLoopSource(observer)
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+            geometryObservers[member.id] = WindowGeometryObserverRegistration(
+                observer: observer,
+                source: source,
+                context: context,
+                groupID: group.id,
+                processID: processID
+            )
+        }
+    }
+
+    private func removeGeometryObserver(_ memberID: UUID) {
+        guard let registration = geometryObservers.removeValue(forKey: memberID) else { return }
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), registration.source, .commonModes)
+    }
+
+    private func removeGeometryObservers(groupID: UUID) {
+        let memberIDs = geometryObservers.compactMap { memberID, registration in
+            registration.groupID == groupID ? memberID : nil
+        }
+        memberIDs.forEach(removeGeometryObserver)
+        pendingBoundsSyncs.removeValue(forKey: groupID)?.cancel()
+    }
+
+    fileprivate func scheduleWindowBoundsSync(groupID: UUID, memberID: UUID) {
+        pendingBoundsSyncs[groupID]?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingBoundsSyncs[groupID] = nil
+            self.synchronizeGroupBounds(groupID: groupID, sourceMemberID: memberID)
+        }
+        pendingBoundsSyncs[groupID] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)
+    }
+
+    private func synchronizeGroupBounds(groupID: UUID, sourceMemberID: UUID) {
+        guard var group = store.groups.first(where: { $0.id == groupID }),
+              let source = group.members.first(where: { $0.id == sourceMemberID }),
+              case .matched(let liveSource) = WindowReferenceMatcher.match(source, among: availableWindows),
+              let bounds = liveSource.window.bounds() else { return }
+        let change = abs(bounds.x - group.bounds.x) + abs(bounds.y - group.bounds.y)
+            + abs(bounds.width - group.bounds.width) + abs(bounds.height - group.bounds.height)
+        guard change > 2 else { return }
+
+        group.bounds = bounds
+        group.selectedMemberID = sourceMemberID
+        updateReference(sourceMemberID, in: &group) { $0.lastKnownBounds = bounds }
+        var constrained = false
+        for member in group.members where member.id != sourceMemberID {
+            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows),
+                  let actual = live.window.apply(bounds) else { continue }
+            let delta = abs(actual.x - bounds.x) + abs(actual.y - bounds.y)
+                + abs(actual.width - bounds.width) + abs(actual.height - bounds.height)
+            if delta > 4 { constrained = true }
+            updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
+        }
+        do {
+            try store.upsert(group)
+            if constrained { statusMessage = "An app constrained its window size. The group now uses the accepted size." }
+            show(group)
+        } catch { statusMessage = error.localizedDescription }
     }
 
     private func restoreAvailableGroups() {
@@ -246,46 +368,8 @@ final class GroupCoordinator: ObservableObject {
         show(group)
     }
 
-    private func observeActiveWindowBounds() {
-        guard AccessibilityPermission.isGranted else {
-            hadPermission = false
-            return
-        }
-        let permissionJustGranted = !hadPermission
-        if permissionJustGranted {
-            hadPermission = true
-            if statusMessage?.localizedCaseInsensitiveContains("accessibility") == true {
-                statusMessage = nil
-            }
-            restoreAvailableGroups()
-            return
-        }
-        refreshAvailableWindows()
-        for var group in store.groups {
-            guard let selectedID = group.selectedMemberID,
-                  let selected = group.members.first(where: { $0.id == selectedID }),
-                  case .matched(let live) = WindowReferenceMatcher.match(selected, among: availableWindows),
-                  let current = live.window.bounds(),
-                  abs(current.x - group.bounds.x) + abs(current.y - group.bounds.y)
-                    + abs(current.width - group.bounds.width) + abs(current.height - group.bounds.height) > 3 else { continue }
-            var constrained = abs(current.width - group.bounds.width) + abs(current.height - group.bounds.height) > 4
-            group.bounds = current
-            updateReference(selectedID, in: &group) { $0.lastKnownBounds = current }
-            for member in group.members where member.id != selectedID {
-                guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) else { continue }
-                guard let actual = live.window.apply(current) else { continue }
-                let delta = abs(actual.x - current.x) + abs(actual.y - current.y)
-                    + abs(actual.width - current.width) + abs(actual.height - current.height)
-                if delta > 4 { constrained = true }
-                updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
-            }
-            try? store.upsert(group)
-            if constrained { statusMessage = "An app constrained its window size. The group now uses the accepted size." }
-            show(group)
-        }
-    }
-
     private func show(_ group: TabGroup) {
+        configureGeometryObservers(for: group)
         let labels = Dictionary(uniqueKeysWithValues: group.members.map { member in
             let app = NSRunningApplication(processIdentifier: pid_t(member.processID ?? -1))?.localizedName ?? member.bundleIdentifier
             return (member.id, (app: app, title: member.title ?? "Window"))
