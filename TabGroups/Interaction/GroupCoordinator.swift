@@ -7,17 +7,18 @@ final class GroupCoordinator: ObservableObject {
     @Published var statusMessage: String?
     @Published var availableWindows: [DiscoveredWindow] = []
 
-    private let windowController: WindowController
     private let strip = TabStripCoordinator()
+    private let windowScanQueue = DispatchQueue(label: "com.4nche.TabGroups.window-scan", qos: .userInitiated)
     private var restorer: WindowRestorer?
     private var boundsTimer: Timer?
+    private var windowScanInProgress = false
+    private var windowScanCompletions: [([DiscoveredWindow]) -> Void] = []
     private var started = false
     private var hadPermission = false
 
     init(store: GroupStore = GroupStore(), catalog: WindowCatalog = WindowCatalog()) {
         self.store = store
         self.catalog = catalog
-        self.windowController = WindowController(catalog: catalog)
     }
 
     var unmatchedMembers: [(group: TabGroup, member: WindowReference)] {
@@ -35,7 +36,6 @@ final class GroupCoordinator: ObservableObject {
         guard !started else { return }
         started = true
         statusMessage = store.loadError?.localizedDescription
-        refreshAvailableWindows()
         if AccessibilityPermission.isGranted {
             hadPermission = true
             restoreAvailableGroups()
@@ -44,7 +44,7 @@ final class GroupCoordinator: ObservableObject {
         }
         restorer = WindowRestorer { [weak self] in self?.restoreAvailableGroups() }
         restorer?.start()
-        boundsTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in
+        boundsTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.observeActiveWindowBounds()
         }
     }
@@ -59,7 +59,25 @@ final class GroupCoordinator: ObservableObject {
     }
 
     func refreshAvailableWindows() {
-        availableWindows = catalog.scan()
+        refreshAvailableWindows(completion: nil)
+    }
+
+    private func refreshAvailableWindows(completion: (([DiscoveredWindow]) -> Void)?) {
+        if let completion { windowScanCompletions.append(completion) }
+        guard !windowScanInProgress else { return }
+        windowScanInProgress = true
+        windowScanQueue.async { [weak self] in
+            guard let self else { return }
+            let windows = self.catalog.scan()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.availableWindows = windows
+                self.windowScanInProgress = false
+                let completions = self.windowScanCompletions
+                self.windowScanCompletions.removeAll()
+                completions.forEach { $0(windows) }
+            }
+        }
     }
 
     func createGroup(windowIDs: [String]) {
@@ -67,7 +85,6 @@ final class GroupCoordinator: ObservableObject {
             statusMessage = "Enable Accessibility permission before grouping windows."
             return
         }
-        refreshAvailableWindows()
         var seen = Set<String>()
         let selected = windowIDs.compactMap { id -> DiscoveredWindow? in
             guard seen.insert(id).inserted else { return nil }
@@ -107,17 +124,23 @@ final class GroupCoordinator: ObservableObject {
     func select(groupID: UUID, memberID: UUID) {
         guard var group = store.groups.first(where: { $0.id == groupID }),
               let member = group.members.first(where: { $0.id == memberID }) else { return }
+        guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) else {
+            statusMessage = "That window is unavailable. Refresh the window list and try again."
+            return
+        }
+        live.window.raise()
+        guard let actual = live.window.apply(group.bounds) else {
+            statusMessage = "Could not move or resize that window."
+            return
+        }
+        group.selectedMemberID = member.id
+        group.bounds = actual
+        updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
         do {
-            let actual = try windowController.activate(member, bounds: group.bounds)
-            group.selectedMemberID = member.id
-            group.bounds = actual
-            updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
             try store.upsert(group)
             show(group)
             statusMessage = nil
-        } catch {
-            statusMessage = error.localizedDescription
-        }
+        } catch { statusMessage = error.localizedDescription }
     }
 
     func removeMember(groupID: UUID, memberID: UUID) {
@@ -151,7 +174,6 @@ final class GroupCoordinator: ObservableObject {
         if group.bounds.width <= 0 || group.bounds.height <= 0 { group.bounds = replacement.lastKnownBounds }
         do {
             try store.upsert(group)
-            refreshAvailableWindows()
             restore(group)
         } catch { statusMessage = error.localizedDescription }
     }
@@ -181,8 +203,10 @@ final class GroupCoordinator: ObservableObject {
 
     private func restoreAvailableGroups() {
         guard AccessibilityPermission.isGranted else { return }
-        refreshAvailableWindows()
-        store.groups.forEach(restore)
+        refreshAvailableWindows { [weak self] _ in
+            guard let self, AccessibilityPermission.isGranted else { return }
+            self.store.groups.forEach(self.restore)
+        }
     }
 
     private func restore(_ original: TabGroup) {
@@ -227,18 +251,21 @@ final class GroupCoordinator: ObservableObject {
             hadPermission = false
             return
         }
-        if !hadPermission {
+        let permissionJustGranted = !hadPermission
+        if permissionJustGranted {
             hadPermission = true
             if statusMessage?.localizedCaseInsensitiveContains("accessibility") == true {
                 statusMessage = nil
             }
             restoreAvailableGroups()
+            return
         }
         refreshAvailableWindows()
         for var group in store.groups {
             guard let selectedID = group.selectedMemberID,
                   let selected = group.members.first(where: { $0.id == selectedID }),
-                  let current = windowController.currentBounds(selected),
+                  case .matched(let live) = WindowReferenceMatcher.match(selected, among: availableWindows),
+                  let current = live.window.bounds(),
                   abs(current.x - group.bounds.x) + abs(current.y - group.bounds.y)
                     + abs(current.width - group.bounds.width) + abs(current.height - group.bounds.height) > 3 else { continue }
             var constrained = abs(current.width - group.bounds.width) + abs(current.height - group.bounds.height) > 4
