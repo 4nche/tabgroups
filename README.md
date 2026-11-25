@@ -17,7 +17,15 @@ Tab Groups is a native macOS menu bar utility that turns windows from different 
 - macOS 14 or later. The glass bar uses Liquid Glass on macOS 26 and later, and a regular blur before that.
 - Accessibility permission, which macOS requires for moving and resizing other apps' windows.
 
-## Getting started
+## Download
+
+Get the latest build from the [releases page](https://github.com/4nche/tabgroups/releases/latest). It is signed and notarized, so it opens without a Gatekeeper warning.
+
+1. Unzip `TabGroups-<version>.zip` and drag `TabGroups.app` to Applications.
+2. Launch it. Tab Groups appears in the menu bar.
+3. Choose **Accessibility Permission…** and enable Tab Groups in System Settings.
+
+## Building from source
 
 1. Open `TabGroups.xcodeproj` in Xcode and run the `TabGroups` scheme.
 2. Tab Groups appears in the menu bar. Choose **Accessibility Permission…** and enable Tab Groups in System Settings.
