@@ -13,10 +13,14 @@ private final class ObserverContext {
     }
 }
 
-private let observerCallback: AXObserverCallback = { _, _, _, refcon in
+private let observerCallback: AXObserverCallback = { _, _, notification, refcon in
     guard let refcon else { return }
     let context = Unmanaged<ObserverContext>.fromOpaque(refcon).takeUnretainedValue()
-    context.center?.onChange?(context.groupID, context.memberID)
+    if (notification as String) == (kAXUIElementDestroyedNotification as String) {
+        context.center?.onDestroyed?(context.groupID, context.memberID)
+    } else {
+        context.center?.onChange?(context.groupID, context.memberID)
+    }
 }
 
 /// Watches member windows for moves and resizes made by anything: the mouse, a window manager, the app.
@@ -30,6 +34,8 @@ final class GeometryObserverCenter {
     }
 
     var onChange: ((_ groupID: UUID, _ memberID: UUID) -> Void)?
+    /// A member window was closed, or its app quit.
+    var onDestroyed: ((_ groupID: UUID, _ memberID: UUID) -> Void)?
     private var registrations: [UUID: Registration] = [:]
 
     func observe(group: TabGroup, resolve: (WindowReference) -> DiscoveredWindow?) {
@@ -69,6 +75,7 @@ final class GeometryObserverCenter {
         let pointer = Unmanaged.passUnretained(context).toOpaque()
         let moved = AXObserverAddNotification(observer, window.element, kAXMovedNotification as CFString, pointer)
         let resized = AXObserverAddNotification(observer, window.element, kAXResizedNotification as CFString, pointer)
+        _ = AXObserverAddNotification(observer, window.element, kAXUIElementDestroyedNotification as CFString, pointer)
         guard moved == .success || resized == .success else { return nil }
         let source = AXObserverGetRunLoopSource(observer)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)

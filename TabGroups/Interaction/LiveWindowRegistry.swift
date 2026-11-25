@@ -34,6 +34,10 @@ final class LiveWindowRegistry {
         gone.keys.forEach(forget(memberID:))
     }
 
+    func handleProcessID(for memberID: UUID) -> pid_t? {
+        handles[memberID]?.window.processID
+    }
+
     func recordApplied(_ bounds: WindowBounds, memberID: UUID) {
         lastApplied[memberID] = bounds
     }

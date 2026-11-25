@@ -5,6 +5,7 @@ import Combine
 /// Creates, restores and edits groups. Movement lives in `GroupCoordinator+Movement.swift`.
 final class GroupCoordinator: ObservableObject {
     static let windowRefreshInterval: TimeInterval = 5
+    static let popOutOffset: Double = 36
 
     let store: GroupStore
     let catalog: WindowCatalog
@@ -23,6 +24,10 @@ final class GroupCoordinator: ObservableObject {
     private var windowRefreshTimer: Timer?
     private var activationToken: NSObjectProtocol?
     private var terminationToken: NSObjectProtocol?
+    private var appQuitToken: NSObjectProtocol?
+    private var powerOffToken: NSObjectProtocol?
+    /// Set while the Mac shuts down or logs out: apps quitting then must not empty the groups.
+    var isPoweringOff = false
     private var windowScanInProgress = false
     private var windowScanCompletions: [([DiscoveredWindow]) -> Void] = []
     private var hasRaisedOnRestore = false
@@ -36,6 +41,8 @@ final class GroupCoordinator: ObservableObject {
     deinit {
         if let activationToken { NSWorkspace.shared.notificationCenter.removeObserver(activationToken) }
         if let terminationToken { NotificationCenter.default.removeObserver(terminationToken) }
+        if let appQuitToken { NSWorkspace.shared.notificationCenter.removeObserver(appQuitToken) }
+        if let powerOffToken { NSWorkspace.shared.notificationCenter.removeObserver(powerOffToken) }
     }
 
     var unmatchedMembers: [(group: TabGroup, member: WindowReference)] {
@@ -52,6 +59,9 @@ final class GroupCoordinator: ObservableObject {
         statusMessage = store.loadError?.localizedDescription
         observers.onChange = { [weak self] groupID, memberID in
             self?.memberGeometryChanged(groupID: groupID, memberID: memberID)
+        }
+        observers.onDestroyed = { [weak self] groupID, memberID in
+            self?.memberWindowClosed(groupID: groupID, memberID: memberID)
         }
         if AccessibilityPermission.isGranted {
             restoreAvailableGroups()
@@ -74,6 +84,17 @@ final class GroupCoordinator: ObservableObject {
         ) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             self?.applicationActivated(processID: app.processIdentifier)
+        }
+        appQuitToken = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            self?.applicationTerminated(processID: app.processIdentifier)
+        }
+        powerOffToken = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.isPoweringOff = true
         }
         terminationToken = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
@@ -181,12 +202,20 @@ final class GroupCoordinator: ObservableObject {
 
     func removeMember(groupID: UUID, memberID: UUID) {
         guard var group = store.groups.first(where: { $0.id == groupID }) else { return }
+        // A tab removed with its close button pops out a little, so its window is not lost behind the group.
+        var poppedOut: AXWindow?
         if let leaving = group.members.first(where: { $0.id == memberID }), let live = liveWindow(for: leaving) {
             reveal(live.window)
+            if movement.tornTabs[memberID] == nil, let bounds = live.window.bounds() {
+                _ = live.window.move(to: bounds.translated(dx: Self.popOutOffset, dy: Self.popOutOffset))
+                poppedOut = live.window
+            }
         }
+        defer { poppedOut?.raise() }
         group.members = group.members.filter { $0.id != memberID }
         registry.forget(memberID: memberID)
-        guard !group.members.isEmpty else {
+        // A group of one is just a window with a bar on it: it dissolves.
+        guard group.members.count >= 2 else {
             deleteGroup(group)
             return
         }
@@ -338,7 +367,18 @@ final class GroupCoordinator: ObservableObject {
     private func refreshBars() {
         guard AccessibilityPermission.isGranted else { return }
         store.groups.filter { !isMoving(groupID: $0.id) }.forEach { group in
-            guard group.members.contains(where: { liveWindow(for: $0) != nil }) else { return }
+            guard let next = group.members.first(where: { liveWindow(for: $0) != nil }) else { return }
+            // The selected tab's window went away unnoticed: bring the next one up instead of an empty group.
+            if let selected = group.members.first(where: { $0.id == group.selectedMemberID }),
+               liveWindow(for: selected) == nil, let live = liveWindow(for: next) {
+                var healed = group
+                healed.selectedMemberID = next.id
+                persist(healed)
+                reveal(live.window)
+                show(healed)
+                concealUnselected(in: healed)
+                return
+            }
             show(group)
         }
     }
@@ -454,6 +494,66 @@ extension GroupCoordinator {
             if window.isMinimized || window.isFinderDesktop { return true }
             if let bounds = window.bounds(), bounds.width <= 80 || bounds.height <= 60 { return true }
             return concealable.contains { $0.isSameWindow(as: window.element) }
+        }
+    }
+}
+
+// MARK: - Windows that close and apps that quit
+
+extension GroupCoordinator {
+    /// A member window reported itself destroyed. Checked again a moment later: some apps rebuild a
+    /// window (for example around full screen) and the handle can still answer.
+    func memberWindowClosed(groupID: UUID, memberID: UUID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, !self.isPoweringOff,
+                  let group = self.store.groups.first(where: { $0.id == groupID }),
+                  let member = group.members.first(where: { $0.id == memberID }) else { return }
+            if let live = self.liveWindow(for: member), !live.window.isInvalid { return }
+            self.dropClosedMembers([memberID], from: groupID)
+        }
+    }
+
+    /// An app quit: its tabs leave their groups, and a group whose visible tab it was shows the next one.
+    func applicationTerminated(processID: pid_t) {
+        guard !isPoweringOff else { return }
+        availableWindows.removeAll { $0.window.processID == processID }
+        for group in store.groups {
+            let gone = group.members.filter { member in
+                registry.handleProcessID(for: member.id) == processID
+                    || (registry.handleProcessID(for: member.id) == nil && member.processID == processID)
+            }
+            guard !gone.isEmpty else { continue }
+            dropClosedMembers(Set(gone.map(\.id)), from: group.id)
+        }
+    }
+
+    /// Takes closed windows out of a group. A group left with one tab dissolves; otherwise the next
+    /// tab comes forward when the visible one was closed.
+    private func dropClosedMembers(_ memberIDs: Set<UUID>, from groupID: UUID) {
+        guard var group = store.groups.first(where: { $0.id == groupID }) else { return }
+        let wasSelected = group.selectedMemberID.map(memberIDs.contains) ?? false
+        let processIDs = Set(memberIDs.compactMap { registry.handleProcessID(for: $0) })
+        memberIDs.forEach { registry.forget(memberID: $0) }
+        // Stale scan entries of the closed windows must not be matched back into the group.
+        availableWindows.removeAll { processIDs.contains($0.window.processID) && $0.window.isInvalid }
+        group.members.removeAll { memberIDs.contains($0.id) }
+
+        guard group.members.count >= 2 else {
+            let last = group.members.first.flatMap { liveWindow(for: $0)?.window }
+            deleteGroup(group)
+            if wasSelected { last?.raise() }
+            statusMessage = "\(group.name) was ungrouped: only one window was left."
+            return
+        }
+        if wasSelected {
+            group.selectedMemberID = (group.members.first { liveWindow(for: $0) != nil } ?? group.members.first)?.id
+        }
+        guard persist(group) else { return }
+        if wasSelected, let selected = group.selectedMemberID,
+           group.members.contains(where: { $0.id == selected && liveWindow(for: $0) != nil }) {
+            select(groupID: groupID, memberID: selected)
+        } else {
+            show(group)
         }
     }
 }
