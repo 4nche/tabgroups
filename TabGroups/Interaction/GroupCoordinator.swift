@@ -313,7 +313,7 @@ final class GroupCoordinator: ObservableObject {
         }
 
         activeGroupMoves[groupID] = group
-        strip.translate(groupID: groupID, by: delta, memberWindowNumbers: memberWindowNumbers(for: group))
+        strip.translate(groupID: groupID, by: delta)
         if !constrainedApps.isEmpty {
             statusMessage = "Some apps limited their window movement: \(Array(Set(constrainedApps)).joined(separator: ", "))."
         }
@@ -405,10 +405,34 @@ final class GroupCoordinator: ObservableObject {
     }
 
     private func memberWindowNumbers(for group: TabGroup) -> [CGWindowID] {
-        group.members.compactMap { member in
-            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) else { return nil }
-            return live.window.windowNumber
+        guard let rawWindows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else {
+            return []
         }
+        let windows: [(number: CGWindowID, processID: Int32, title: String?, bounds: CGRect?)] = rawWindows.compactMap { info in
+            guard let number = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
+                  let processID = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value else { return nil }
+            let title = info[kCGWindowName as String] as? String
+            let bounds = (info[kCGWindowBounds as String] as? NSDictionary)
+                .flatMap { CGRect(dictionaryRepresentation: $0) }
+            return (number, processID, title, bounds)
+        }
+
+        return group.members.compactMap { member in
+            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows),
+                  let bounds = live.window.bounds() else { return nil }
+            let candidates = windows.filter { $0.processID == live.window.processID }
+            let titleMatches = candidates.filter { $0.title == member.title }
+            let ranked = titleMatches.isEmpty ? candidates : titleMatches
+            return ranked.min { left, right in
+                windowBoundsDistance(left.bounds, bounds) < windowBoundsDistance(right.bounds, bounds)
+            }?.number
+        }
+    }
+
+    private func windowBoundsDistance(_ rect: CGRect?, _ bounds: WindowBounds) -> Double {
+        guard let rect else { return .greatestFiniteMagnitude }
+        return abs(Double(rect.minX) - bounds.x) + abs(Double(rect.minY) - bounds.y)
+            + abs(Double(rect.width) - bounds.width) + abs(Double(rect.height) - bounds.height)
     }
 
     private func updateReference(_ id: UUID, in group: inout TabGroup, update: (inout WindowReference) -> Void) {
