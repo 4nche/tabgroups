@@ -4,7 +4,7 @@ import SwiftUI
 private struct GroupFrameView: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(Color.accentColor.opacity(0.8), lineWidth: 2)
+            .strokeBorder(Color.primary.opacity(0.24), lineWidth: 1.25)
             .padding(1)
     }
 }
@@ -70,12 +70,16 @@ final class TabStripPanel: NSPanel {
               onSelect: @escaping (UUID) -> Void, onRemove: @escaping (UUID) -> Void) {
         let view = TabStripView(group: group, windowTitles: windowTitles,
                                 onSelect: onSelect, onRemove: onRemove)
-        contentView = NSHostingView(rootView: view)
+        let host = NSHostingView(rootView: view)
+        contentView = host
+        host.layoutSubtreeIfNeeded()
         let target = group.bounds
         let groupRect = WindowScreenGeometry.appKitRect(for: target)
-        let height: CGFloat = 42
+        let fittingSize = host.fittingSize
+        let width = min(fittingSize.width, NSScreen.main?.visibleFrame.width ?? fittingSize.width)
+        let height = fittingSize.height
         setFrame(NSRect(x: groupRect.minX, y: groupRect.maxY,
-                        width: max(240, min(CGFloat(target.width), 720)), height: height), display: true)
+                        width: width, height: height), display: true)
         orderFrontRegardless()
     }
 }
