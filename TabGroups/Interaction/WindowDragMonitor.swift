@@ -10,9 +10,12 @@ final class WindowDragMonitor {
     private let feedback = DragFeedbackPanel()
     private var monitors: [Any] = []
     private var source: DiscoveredWindow?
+    private var dragWindows: [DiscoveredWindow] = []
     private var startedWithShift = false
     private var startPoint: NSPoint = .zero
     private var dragMoved = false
+    private var hoverTargetID: String?
+    private var lastHoverHitTest = 0.0
     private let onDrop: (DiscoveredWindow, DiscoveredWindow) -> DragDropResult
 
     init(catalog: WindowCatalog, onDrop: @escaping (DiscoveredWindow, DiscoveredWindow) -> DragDropResult) {
@@ -36,6 +39,7 @@ final class WindowDragMonitor {
         monitors.forEach(NSEvent.removeMonitor)
         monitors.removeAll()
         source = nil
+        dragWindows = []
         feedback.hide()
     }
 
@@ -44,7 +48,10 @@ final class WindowDragMonitor {
             guard event.modifierFlags.contains(.shift) else { return }
             startedWithShift = true
             dragMoved = false
+            hoverTargetID = nil
+            lastHoverHitTest = 0
             startPoint = NSEvent.mouseLocation
+            dragWindows = catalog.scan()
             source = window(at: startPoint)
             let message: String
             let kind: DragFeedbackKind
@@ -66,20 +73,44 @@ final class WindowDragMonitor {
         let currentPoint = NSEvent.mouseLocation
         if event.type == .leftMouseDragged {
             if hypot(currentPoint.x - startPoint.x, currentPoint.y - startPoint.y) > 12 { dragMoved = true }
-            if dragMoved { feedback.follow(currentPoint) }
+            if dragMoved {
+                feedback.follow(currentPoint)
+                let now = ProcessInfo.processInfo.systemUptime
+                guard now - lastHoverHitTest >= 0.1 else { return }
+                lastHoverHitTest = now
+                let target = window(at: currentPoint)
+                let otherTarget = source.flatMap { source in target?.id == source.id ? nil : target }
+                if otherTarget?.id != hoverTargetID {
+                    hoverTargetID = otherTarget?.id
+                    if let source, let target = otherTarget {
+                        feedback.present("Release to group \(source.appName) with \(target.appName)",
+                                         kind: .active,
+                                         at: currentPoint)
+                    } else {
+                        feedback.present("Drag over another app window to group", kind: .active, at: currentPoint)
+                    }
+                }
+            }
             return
         }
 
         guard event.type == .leftMouseUp else { return }
-        defer { source = nil; startedWithShift = false; dragMoved = false }
+        defer {
+            source = nil
+            dragWindows = []
+            startedWithShift = false
+            dragMoved = false
+            hoverTargetID = nil
+            lastHoverHitTest = 0
+        }
         if hypot(currentPoint.x - startPoint.x, currentPoint.y - startPoint.y) > 12 { dragMoved = true }
         guard dragMoved else { feedback.hide(); return }
         guard let source else {
             feedback.present("Couldn’t identify the source window", kind: .warning, at: currentPoint, hideAfter: 2)
             return
         }
-        guard let target = window(at: currentPoint, excluding: source.id), target.id != source.id else {
-            feedback.present("Drop over another app window to group it", kind: .warning, at: currentPoint, hideAfter: 2)
+        guard let target = window(at: currentPoint), target.id != source.id else {
+            feedback.present("No other app window detected here", kind: .warning, at: currentPoint, hideAfter: 2)
             return
         }
 
@@ -90,18 +121,43 @@ final class WindowDragMonitor {
                          hideAfter: 2)
     }
 
-    private func window(at point: NSPoint, excluding: String? = nil) -> DiscoveredWindow? {
-        let windows = catalog.scan()
-        let height = NSScreen.screens.first(where: { $0.frame.contains(point) })?.frame.maxY
-            ?? NSScreen.main?.frame.maxY ?? 0
-        let axPoint = CGPoint(x: point.x, y: height - point.y)
-        return windows.reversed().first { item in
-            guard item.id != excluding else { return false }
-            let bounds = item.bounds
-            let left = CGFloat(bounds.x)
-            let top = CGFloat(bounds.y)
-            return axPoint.x >= left && axPoint.x <= left + CGFloat(bounds.width)
-                && axPoint.y >= top && axPoint.y <= top + CGFloat(bounds.height)
+    private func window(at point: NSPoint) -> DiscoveredWindow? {
+        let windows = dragWindows
+        // AX uses the primary display's top-left coordinate origin. Using the
+        // hovered display's height works on a single display but offsets every
+        // hit test on secondary displays (and can miss windows on the primary).
+        let primaryDisplay = NSScreen.screens.first {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == CGMainDisplayID()
         }
+        let height = primaryDisplay?.frame.maxY ?? NSScreen.screens.first?.frame.maxY ?? 0
+        let axPoint = CGPoint(x: point.x, y: height - point.y)
+        // The accessibility scan is grouped by running app, so its array order
+        // is not screen stacking order. Use WindowServer's front-to-back list
+        // to choose the window actually under the pointer, then resolve it to
+        // the matching accessible window.
+        guard let onScreen = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return windows.first { contains(axPoint, in: $0.bounds) }
+        }
+        for info in onScreen {
+            guard let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue, layer == 0,
+                  let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                  pid != ProcessInfo.processInfo.processIdentifier,
+                  let rawBounds = info[kCGWindowBounds as String] as? CFDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: rawBounds), bounds.contains(axPoint) else { continue }
+            return windows
+                .filter { $0.reference.processID == pid && contains(axPoint, in: $0.bounds) }
+                .min { boundsDistance($0.bounds, to: bounds) < boundsDistance($1.bounds, to: bounds) }
+        }
+        return nil
+    }
+
+    private func contains(_ point: CGPoint, in bounds: WindowBounds) -> Bool {
+        point.x >= bounds.x && point.x <= bounds.x + bounds.width
+            && point.y >= bounds.y && point.y <= bounds.y + bounds.height
+    }
+
+    private func boundsDistance(_ bounds: WindowBounds, to rect: CGRect) -> CGFloat {
+        abs(CGFloat(bounds.x) - rect.minX) + abs(CGFloat(bounds.y) - rect.minY)
+            + abs(CGFloat(bounds.width) - rect.width) + abs(CGFloat(bounds.height) - rect.height)
     }
 }
