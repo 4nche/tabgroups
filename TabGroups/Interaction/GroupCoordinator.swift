@@ -257,6 +257,9 @@ final class GroupCoordinator: ObservableObject {
         }
         if !hadPermission {
             hadPermission = true
+            if statusMessage?.localizedCaseInsensitiveContains("accessibility") == true {
+                statusMessage = nil
+            }
             dragMonitor?.start()
             restoreAvailableGroups()
         }

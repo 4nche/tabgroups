@@ -16,3 +16,7 @@ Some apps restrict Accessibility window operations. When an app rejects the requ
 ## Project
 
 Open `TabGroups.xcodeproj` in Xcode. The `TabGroups` scheme includes focused persistence and window matching tests.
+
+### Local Accessibility permission
+
+For local development builds, select a stable **Team** under the app target’s **Signing & Capabilities** in Xcode. Without a development signing identity, Xcode signs the app ad hoc; macOS can then treat each rebuilt binary as a different app and leave the old Accessibility toggle visible while the new build is untrusted. After switching signing identities, remove the old Tab Groups entry from **System Settings → Privacy & Security → Device Control and Data Access**, run the newly signed app, enable it, and relaunch it.
