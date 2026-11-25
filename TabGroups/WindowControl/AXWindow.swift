@@ -1,9 +1,16 @@
 import ApplicationServices
 import AppKit
+import CoreGraphics
 
 struct AXWindow {
     let element: AXUIElement
     let processID: pid_t
+
+    var windowNumber: CGWindowID? {
+        var number: CGWindowID = 0
+        guard AXUIElementGetWindow(element, &number) == .success else { return nil }
+        return number
+    }
 
     func readString(_ attribute: CFString) -> String? {
         var value: CFTypeRef?
