@@ -71,6 +71,23 @@ The tests cover the pure rules: group geometry, what a drop does, hit testing, p
 | `TabGroups/Persistence` | The saved groups file and its migrations |
 | `docs/plans` | Design notes and implementation plans |
 
+### Release build
+
+`scripts/release.sh` archives the app, signs it with Developer ID, notarizes it with Apple, staples the result and writes `build/TabGroups-<version>.zip`.
+
+```sh
+scripts/release.sh                  # full release
+scripts/release.sh --skip-notarize  # signed only, for your own Mac
+```
+
+Notarization needs credentials stored once in the keychain:
+
+```sh
+xcrun notarytool store-credentials tabgroups-notary --apple-id <apple id> --team-id <team id>
+```
+
+The version comes from `MARKETING_VERSION` in the project. App Sandbox stays off, because a sandboxed app cannot move other apps' windows; this also rules out the Mac App Store.
+
 ### Accessibility permission during development
 
 Select a stable **Team** under the app target's **Signing & Capabilities** in Xcode. Without one, Xcode signs the app ad hoc, and macOS can treat each rebuild as a different app: the old Accessibility toggle stays visible while the new build is untrusted.

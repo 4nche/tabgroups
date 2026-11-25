@@ -44,6 +44,7 @@
 		A10000000000000000000032 /* BarBackdropPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* BarBackdropPanel.swift */; };
 		A10000000000000000000033 /* TabHitTester.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* TabHitTester.swift */; };
 		B10000000000000000000009 /* TabHitTesterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000009 /* TabHitTesterTests.swift */; };
+		A10000000000000000000900 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000900 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,6 +96,7 @@
 		A20000000000000000000032 /* BarBackdropPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarBackdropPanel.swift; sourceTree = "<group>"; };
 		A20000000000000000000033 /* TabHitTester.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabHitTester.swift; sourceTree = "<group>"; };
 		B20000000000000000000009 /* TabHitTesterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabHitTesterTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000900 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -128,6 +130,7 @@
 		A30000000000000000000002 /* TabGroups */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000900 /* Assets.xcassets */,
 				A30000000000000000000012 /* Geometry */,
 				A30000000000000000000004 /* Models */,
 				A30000000000000000000005 /* Persistence */,
@@ -336,6 +339,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000900 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -437,6 +441,10 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.4nche.TabGroups;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -451,6 +459,10 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.4nche.TabGroups;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -464,6 +476,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				DEVELOPMENT_TEAM = 8KQUFR75Z4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.4nche.TabGroupsTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -478,6 +491,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				DEVELOPMENT_TEAM = 8KQUFR75Z4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.4nche.TabGroupsTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
