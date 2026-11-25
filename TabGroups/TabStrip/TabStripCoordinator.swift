@@ -9,11 +9,19 @@ final class TabStripCoordinator {
     private var panels: [UUID: GroupPanels] = [:]
 
     func show(_ group: TabGroup, titles: [UUID: (app: String, title: String)],
-              select: @escaping (UUID) -> Void, remove: @escaping (UUID) -> Void) {
+              select: @escaping (UUID) -> Void, remove: @escaping (UUID) -> Void,
+              move: @escaping (CGSize) -> Void, moveEnded: @escaping () -> Void) {
         let groupPanels = panels[group.id] ?? GroupPanels(tabs: TabStripPanel(), frame: GroupFramePanel())
         panels[group.id] = groupPanels
         groupPanels.frame.show(bounds: group.bounds)
-        groupPanels.tabs.show(group: group, windowTitles: titles, onSelect: select, onRemove: remove)
+        groupPanels.tabs.show(group: group, windowTitles: titles, onSelect: select, onRemove: remove,
+                              onMove: move, onMoveEnded: moveEnded)
+    }
+
+    func translate(groupID: UUID, by delta: CGSize) {
+        guard let groupPanels = panels[groupID] else { return }
+        groupPanels.frame.translate(by: delta)
+        groupPanels.tabs.translate(by: delta)
     }
 
     func hide(groupID: UUID) {
