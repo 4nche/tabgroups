@@ -243,7 +243,7 @@ final class GroupCoordinator: ObservableObject {
 
         for member in group.members {
             guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows),
-                  let processID = live.reference.processID.map(pid_t.init) else {
+                  let processID = live.reference.processID.map({ pid_t($0) }) else {
                 if geometryObservers[member.id]?.groupID == group.id { removeGeometryObserver(member.id) }
                 continue
             }
