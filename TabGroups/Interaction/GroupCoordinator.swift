@@ -313,7 +313,7 @@ final class GroupCoordinator: ObservableObject {
         }
 
         activeGroupMoves[groupID] = group
-        strip.translate(groupID: groupID, by: delta)
+        strip.translate(groupID: groupID, by: delta, memberWindowNumbers: memberWindowNumbers(for: group))
         if !constrainedApps.isEmpty {
             statusMessage = "Some apps limited their window movement: \(Array(Set(constrainedApps)).joined(separator: ", "))."
         }
@@ -400,7 +400,15 @@ final class GroupCoordinator: ObservableObject {
                    select: { [weak self] id in self?.select(groupID: group.id, memberID: id) },
                    remove: { [weak self] id in self?.removeMember(groupID: group.id, memberID: id) },
                    move: { [weak self] delta in self?.moveGroup(groupID: group.id, by: delta) },
-                   moveEnded: { [weak self] in self?.finishGroupMove(groupID: group.id) })
+                   moveEnded: { [weak self] in self?.finishGroupMove(groupID: group.id) },
+                   memberWindowNumbers: memberWindowNumbers(for: group))
+    }
+
+    private func memberWindowNumbers(for group: TabGroup) -> [CGWindowID] {
+        group.members.compactMap { member in
+            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) else { return nil }
+            return live.window.windowNumber
+        }
     }
 
     private func updateReference(_ id: UUID, in group: inout TabGroup, update: (inout WindowReference) -> Void) {
