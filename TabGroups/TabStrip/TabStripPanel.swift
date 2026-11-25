@@ -30,11 +30,14 @@ final class GroupFramePanel: NSPanel {
     func show(bounds: WindowBounds) {
         let rect = WindowScreenGeometry.appKitRect(for: bounds)
         setFrame(rect, display: true)
-        orderFrontRegardless()
     }
 
     func translate(by delta: CGSize) {
         setFrameOrigin(NSPoint(x: frame.origin.x + delta.width, y: frame.origin.y - delta.height))
+    }
+
+    func orderAbove(windowNumber: Int) {
+        order(.above, relativeTo: windowNumber)
     }
 }
 
@@ -86,10 +89,13 @@ final class TabStripPanel: NSPanel {
         let height = fittingSize.height
         setFrame(NSRect(x: groupRect.minX, y: groupRect.maxY,
                         width: width, height: height), display: true)
-        orderFrontRegardless()
     }
 
     func translate(by delta: CGSize) {
         setFrameOrigin(NSPoint(x: frame.origin.x + delta.width, y: frame.origin.y - delta.height))
+    }
+
+    func orderAbove(windowNumber: Int) {
+        order(.above, relativeTo: windowNumber)
     }
 }
