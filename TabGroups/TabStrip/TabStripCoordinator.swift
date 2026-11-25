@@ -1,61 +1,51 @@
-import Foundation
+import AppKit
 import CoreGraphics
 
+/// Owns one bar panel per group and keeps it placed and stacked with the group's windows.
 final class TabStripCoordinator {
-    private struct GroupPanels {
-        let tabs: TabStripPanel
-        let frame: GroupFramePanel
-        var frontmostMemberWindowNumber: Int?
-    }
+    private var panels: [UUID: TabStripPanel] = [:]
 
-    private var panels: [UUID: GroupPanels] = [:]
-
-    func show(_ group: TabGroup, titles: [UUID: (app: String, title: String)],
+    func show(_ group: TabGroup, tabs: [TabItem],
               select: @escaping (UUID) -> Void, remove: @escaping (UUID) -> Void,
-              move: @escaping (CGSize) -> Void, moveEnded: @escaping () -> Void,
+              dragChanged: @escaping (CGSize) -> Void, dragEnded: @escaping () -> Void,
               memberWindowNumbers: [CGWindowID]) {
-        var groupPanels = panels[group.id] ?? GroupPanels(tabs: TabStripPanel(), frame: GroupFramePanel())
-        groupPanels.frontmostMemberWindowNumber = frontmostMemberWindowNumber(from: memberWindowNumbers)
-        panels[group.id] = groupPanels
-        groupPanels.frame.show(bounds: group.bounds)
-        groupPanels.tabs.show(group: group, windowTitles: titles, onSelect: select, onRemove: remove,
-                              onMove: move, onMoveEnded: moveEnded)
-        orderAboveMembers(groupPanels)
+        let panel = panels[group.id] ?? TabStripPanel()
+        panels[group.id] = panel
+        panel.onDragChanged = dragChanged
+        panel.onDragEnded = dragEnded
+        panel.update(tabs: tabs, selectedID: group.selectedMemberID, onSelect: select, onRemove: remove)
+        panel.place(at: group.bounds)
+        order(panel, behind: memberWindowNumbers)
     }
 
-    func translate(groupID: UUID, by delta: CGSize) {
-        guard let groupPanels = panels[groupID] else { return }
-        groupPanels.frame.translate(by: delta)
-        groupPanels.tabs.translate(by: delta)
-        orderAboveMembers(groupPanels)
+    func place(groupID: UUID, at container: WindowBounds) {
+        panels[groupID]?.place(at: container)
     }
 
-    private func frontmostMemberWindowNumber(from windowNumbers: [CGWindowID]) -> Int? {
-        let memberNumbers = Set(windowNumbers.map(Int.init))
-        guard !memberNumbers.isEmpty,
-              let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]],
-              let topmostMemberNumber = windows.lazy.compactMap({ $0[kCGWindowNumber as String] as? Int })
-                .first(where: memberNumbers.contains) else { return nil }
-        return topmostMemberNumber
-    }
-
-    private func orderAboveMembers(_ panels: GroupPanels) {
-        guard let windowNumber = panels.frontmostMemberWindowNumber else { return }
-        panels.frame.orderAbove(windowNumber: windowNumber)
-        panels.tabs.orderAbove(windowNumber: windowNumber)
+    func reorder(groupID: UUID, memberWindowNumbers: [CGWindowID]) {
+        guard let panel = panels[groupID] else { return }
+        order(panel, behind: memberWindowNumbers)
     }
 
     func hide(groupID: UUID) {
-        guard let groupPanels = panels.removeValue(forKey: groupID) else { return }
-        groupPanels.tabs.orderOut(nil)
-        groupPanels.frame.orderOut(nil)
+        panels.removeValue(forKey: groupID)?.orderOut(nil)
     }
 
-    func hide() {
-        panels.values.forEach {
-            $0.tabs.orderOut(nil)
-            $0.frame.orderOut(nil)
+    /// Stacks the bar directly beneath the group's frontmost window, so it is covered by whatever
+    /// covers the group and fills in behind that window's rounded corners. With no known member window it is simply shown.
+    private func order(_ panel: TabStripPanel, behind windowNumbers: [CGWindowID]) {
+        guard let frontmost = frontmostWindowNumber(among: windowNumbers) else {
+            panel.orderFront(nil)
+            return
         }
-        panels.removeAll()
+        panel.orderBelow(windowNumber: frontmost)
+    }
+
+    private func frontmostWindowNumber(among windowNumbers: [CGWindowID]) -> Int? {
+        let members = Set(windowNumbers.map(Int.init))
+        guard !members.isEmpty,
+              let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]]
+        else { return nil }
+        return windows.lazy.compactMap { $0[kCGWindowNumber as String] as? Int }.first(where: members.contains)
     }
 }

@@ -54,10 +54,14 @@ final class GroupStore: ObservableObject {
         do {
             let data = try Data(contentsOf: fileURL)
             let document = try JSONDecoder().decode(GroupDocument.self, from: data)
-            guard document.schemaVersion == GroupDocument.currentSchemaVersion else {
+            switch document.schemaVersion {
+            case GroupDocument.currentSchemaVersion:
+                groups = document.groups
+            case GroupDocument.windowBoundsSchemaVersion:
+                groups = document.groups.map(GroupDocument.containerGroup(fromWindowBounds:))
+            default:
                 throw GroupStoreError.unsupportedSchema(document.schemaVersion)
             }
-            groups = document.groups
         } catch {
             loadError = error
         }
@@ -73,7 +77,20 @@ final class GroupStore: ObservableObject {
 }
 
 private struct GroupDocument: Codable {
-    static let currentSchemaVersion = 1
+    /// Version 2: `TabGroup.bounds` is the whole container, tab bar included.
+    static let currentSchemaVersion = 2
+    /// Version 1: `TabGroup.bounds` was the member window's own rectangle.
+    static let windowBoundsSchemaVersion = 1
+
+    /// Grows a version 1 group upward so its windows keep their place under the new bar.
+    static func containerGroup(fromWindowBounds group: TabGroup) -> TabGroup {
+        var migrated = group
+        migrated.bounds = WindowBounds(x: group.bounds.x,
+                                       y: group.bounds.y - GroupGeometry.barHeight,
+                                       width: group.bounds.width,
+                                       height: group.bounds.height + GroupGeometry.barHeight)
+        return migrated
+    }
 
     var schemaVersion: Int
     var groups: [TabGroup]

@@ -56,3 +56,32 @@ struct AXWindow {
         return (axValue as! AXValue)
     }
 }
+
+extension AXWindow {
+    /// Caps how long a call to this window may block, so a hung app cannot freeze the bar.
+    func setMessagingTimeout(_ seconds: Float) {
+        AXUIElementSetMessagingTimeout(element, seconds)
+    }
+
+    func isSameWindow(as other: AXUIElement) -> Bool {
+        CFEqual(element, other)
+    }
+
+    /// True while the window is minimised or in full screen, when its rectangle is not one a group should follow.
+    var isMinimizedOrFullScreen: Bool {
+        ["AXMinimized", "AXFullScreen"].contains { attribute in
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return false }
+            return (value as? Bool) ?? false
+        }
+    }
+
+    /// The window of this window's app that currently has keyboard focus.
+    func focusedWindowOfOwningApp() -> AXUIElement? {
+        let app = AXUIElementCreateApplication(processID)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+}

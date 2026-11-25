@@ -36,6 +36,17 @@ final class GroupStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fileURL), original)
     }
 
+    func testVersionOneGroupsGrowUpwardByBarHeight() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let groups = try JSONEncoder().encode([makeGroup("Old")])
+        let json = "{\"schemaVersion\":1,\"groups\":" + String(decoding: groups, as: UTF8.self) + "}"
+        try Data(json.utf8).write(to: fileURL)
+
+        let store = GroupStore(fileURL: fileURL)
+        XCTAssertNil(store.loadError)
+        XCTAssertEqual(store.groups.first?.bounds, WindowBounds(x: 10, y: -16, width: 800, height: 636))
+    }
+
     private func makeGroup(_ name: String) -> TabGroup {
         TabGroup(name: name, bounds: WindowBounds(x: 10, y: 20, width: 800, height: 600), members: [])
     }

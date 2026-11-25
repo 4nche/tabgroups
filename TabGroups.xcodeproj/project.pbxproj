@@ -26,6 +26,16 @@
 		B10000000000000000000001 /* GroupStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* GroupStoreTests.swift */; };
 		B10000000000000000000002 /* WindowReferenceMatchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* WindowReferenceMatchingTests.swift */; };
 		B10000000000000000000004 /* TabGroups.app in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* TabGroups.app */; };
+		B10000000000000000000005 /* GroupGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* GroupGeometryTests.swift */; };
+		A10000000000000000000021 /* GroupGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* GroupGeometry.swift */; };
+		A10000000000000000000022 /* ScreenGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* ScreenGeometry.swift */; };
+		A10000000000000000000023 /* LiveWindowRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* LiveWindowRegistry.swift */; };
+		A10000000000000000000024 /* GeometryObserverCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* GeometryObserverCenter.swift */; };
+		A10000000000000000000025 /* GroupCoordinator+Movement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* GroupCoordinator+Movement.swift */; };
+		A10000000000000000000026 /* FilledButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* FilledButtonStyle.swift */; };
+		B10000000000000000000006 /* LiveWindowRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* LiveWindowRegistryTests.swift */; };
+		A10000000000000000000027 /* GlassPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* GlassPreference.swift */; };
+		B10000000000000000000007 /* GlassPreferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* GlassPreferenceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,6 +69,16 @@
 		B20000000000000000000001 /* GroupStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupStoreTests.swift; sourceTree = "<group>"; };
 		B20000000000000000000002 /* WindowReferenceMatchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowReferenceMatchingTests.swift; sourceTree = "<group>"; };
 		B20000000000000000000003 /* TabGroupsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TabGroupsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B20000000000000000000005 /* GroupGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupGeometryTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000021 /* GroupGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupGeometry.swift; sourceTree = "<group>"; };
+		A20000000000000000000022 /* ScreenGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenGeometry.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* LiveWindowRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveWindowRegistry.swift; sourceTree = "<group>"; };
+		A20000000000000000000024 /* GeometryObserverCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeometryObserverCenter.swift; sourceTree = "<group>"; };
+		A20000000000000000000025 /* GroupCoordinator+Movement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GroupCoordinator+Movement.swift"; sourceTree = "<group>"; };
+		A20000000000000000000026 /* FilledButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilledButtonStyle.swift; sourceTree = "<group>"; };
+		B20000000000000000000006 /* LiveWindowRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveWindowRegistryTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000027 /* GlassPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassPreference.swift; sourceTree = "<group>"; };
+		B20000000000000000000007 /* GlassPreferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassPreferenceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,6 +112,7 @@
 		A30000000000000000000002 /* TabGroups */ = {
 			isa = PBXGroup;
 			children = (
+				A30000000000000000000012 /* Geometry */,
 				A30000000000000000000004 /* Models */,
 				A30000000000000000000005 /* Persistence */,
 				A30000000000000000000006 /* WindowControl */,
@@ -141,6 +162,8 @@
 		A30000000000000000000007 /* TabStrip */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000027 /* GlassPreference.swift */,
+				A20000000000000000000022 /* ScreenGeometry.swift */,
 				A20000000000000000000010 /* TabStripView.swift */,
 				A20000000000000000000011 /* TabStripPanel.swift */,
 				A20000000000000000000012 /* TabStripCoordinator.swift */,
@@ -163,6 +186,9 @@
 		A30000000000000000000009 /* Interaction */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000025 /* GroupCoordinator+Movement.swift */,
+				A20000000000000000000024 /* GeometryObserverCenter.swift */,
+				A20000000000000000000023 /* LiveWindowRegistry.swift */,
 				A20000000000000000000014 /* GroupCoordinator.swift */,
 			);
 			path = Interaction;
@@ -179,6 +205,7 @@
 		A30000000000000000000011 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000026 /* FilledButtonStyle.swift */,
 				A20000000000000000000016 /* PermissionHelpView.swift */,
 				A20000000000000000000017 /* UnmatchedWindowView.swift */,
 			);
@@ -188,10 +215,21 @@
 		B30000000000000000000001 /* TabGroupsTests */ = {
 			isa = PBXGroup;
 			children = (
+				B20000000000000000000007 /* GlassPreferenceTests.swift */,
+				B20000000000000000000006 /* LiveWindowRegistryTests.swift */,
+				B20000000000000000000005 /* GroupGeometryTests.swift */,
 				B20000000000000000000001 /* GroupStoreTests.swift */,
 				B20000000000000000000002 /* WindowReferenceMatchingTests.swift */,
 			);
 			path = TabGroupsTests;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000012 /* Geometry */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000021 /* GroupGeometry.swift */,
+			);
+			path = Geometry;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -291,6 +329,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000027 /* GlassPreference.swift in Sources */,
+				A10000000000000000000026 /* FilledButtonStyle.swift in Sources */,
+				A10000000000000000000025 /* GroupCoordinator+Movement.swift in Sources */,
+				A10000000000000000000024 /* GeometryObserverCenter.swift in Sources */,
+				A10000000000000000000023 /* LiveWindowRegistry.swift in Sources */,
+				A10000000000000000000022 /* ScreenGeometry.swift in Sources */,
+				A10000000000000000000021 /* GroupGeometry.swift in Sources */,
 				A10000000000000000000001 /* TabGroupsApp.swift in Sources */,
 				A10000000000000000000002 /* StatusMenuView.swift in Sources */,
 				A10000000000000000000003 /* WindowReference.swift in Sources */,
@@ -314,6 +359,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B10000000000000000000007 /* GlassPreferenceTests.swift in Sources */,
+				B10000000000000000000006 /* LiveWindowRegistryTests.swift in Sources */,
+				B10000000000000000000005 /* GroupGeometryTests.swift in Sources */,
 				B10000000000000000000001 /* GroupStoreTests.swift in Sources */,
 				B10000000000000000000002 /* WindowReferenceMatchingTests.swift in Sources */,
 			);

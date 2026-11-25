@@ -52,7 +52,7 @@ struct GroupsWindowView: View {
                 List(store.groups) { group in
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(group.name).font(.headline)
+                            Text(group.name).font(.system(size: 13, weight: .medium))
                             Text("\(group.members.count) windows · \(group.members.compactMap(\.title).joined(separator: ", "))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -61,7 +61,7 @@ struct GroupsWindowView: View {
                         Spacer()
                         if let selected = group.selectedMemberID {
                             Button("Show") { coordinator.select(groupID: group.id, memberID: selected) }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(FilledButtonStyle())
                         }
                         Button(role: .destructive) { coordinator.deleteGroup(group) } label: {
                             Image(systemName: "trash")
@@ -119,7 +119,7 @@ private struct WindowSelectionPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Create a Group").font(.title3.weight(.semibold))
+                Text("Create a Group").font(.title3.weight(.medium))
                 Spacer()
                 Text("\(selectedWindowIDs.count) selected")
                     .font(.caption)
@@ -127,7 +127,10 @@ private struct WindowSelectionPicker: View {
             }
 
             TextField("Search apps and windows", text: $searchText)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
 
             if visibleWindows.isEmpty {
                 ContentUnavailableView("No accessible windows", systemImage: "macwindow",
@@ -146,15 +149,15 @@ private struct WindowSelectionPicker: View {
             }
 
             HStack {
-                Text("The first selected window sets the group’s size and position.")
+                Text("The first selected window sets where the group sits.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Group \(selectedWindowIDs.count) Windows") {
                     coordinator.createGroup(windowIDs: selectedWindowIDs)
-                    selectedWindowIDs.removeAll()
+                    selectedWindowIDs = []
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(FilledButtonStyle(tone: .accent))
                 .disabled(selectedWindowIDs.count < 2)
             }
         }
@@ -163,11 +166,9 @@ private struct WindowSelectionPicker: View {
     private func windowRow(_ window: DiscoveredWindow) -> some View {
         let selected = selectedWindowIDs.contains(window.id)
         return Button {
-            if let index = selectedWindowIDs.firstIndex(of: window.id) {
-                selectedWindowIDs.remove(at: index)
-            } else {
-                selectedWindowIDs.append(window.id)
-            }
+            selectedWindowIDs = selected
+                ? selectedWindowIDs.filter { $0 != window.id }
+                : selectedWindowIDs + [window.id]
         } label: {
             HStack(spacing: 9) {
                 if let processID = window.reference.processID,

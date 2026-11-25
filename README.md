@@ -6,9 +6,11 @@ Tab Groups is a native macOS menu bar utility for grouping windows from differen
 
 1. Open Tab Groups and enable Accessibility access for it in System Settings.
 2. Choose **Create a Group…** from the menu bar and select at least two windows.
-3. Click **Group**. The first selected window sets the shared size and position; the other selected windows are moved and resized to match.
-4. Use the tabs above the visible group frame to switch windows. Resize the active window to update the group bounds.
-5. Remove a tab with its close button. Each group has its own frame and tab strip.
+3. Click **Group**. The first selected window sets where the group sits; the other windows are moved and resized to match.
+4. A bar spans the top of the group with one tab per window. Click a tab to switch windows; its close button removes that window from the group.
+5. Drag the bar to move the whole group. Moving or resizing any window in the group does the same, whether you drag it or a window manager such as Rectangle Pro repositions it.
+
+The bar sits directly above the group's windows. When a window is snapped against the top of the screen, the bar takes the top 36 points of that area and the window sits just below it.
 
 Groups are saved in `~/Library/Application Support/TabGroups/groups.json`. On launch or wake, Tab Groups reconnects to matching windows that are already open. It does not launch apps or reopen documents. If a saved window cannot be matched uniquely, assign it from the Groups window.
 
@@ -16,7 +18,7 @@ Some apps restrict Accessibility window operations. When an app rejects the requ
 
 ## Project
 
-Open `TabGroups.xcodeproj` in Xcode. The `TabGroups` scheme includes focused persistence and window matching tests.
+Open `TabGroups.xcodeproj` in Xcode. The `TabGroups` scheme includes tests for persistence, window matching and the group geometry rules.
 
 ### Local Accessibility permission
 

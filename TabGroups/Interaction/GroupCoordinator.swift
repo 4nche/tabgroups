@@ -2,47 +2,27 @@ import ApplicationServices
 import AppKit
 import Combine
 
-private final class WindowGeometryObserverContext {
-    weak var coordinator: GroupCoordinator?
-    let groupID: UUID
-    let memberID: UUID
-
-    init(coordinator: GroupCoordinator, groupID: UUID, memberID: UUID) {
-        self.coordinator = coordinator
-        self.groupID = groupID
-        self.memberID = memberID
-    }
-}
-
-private struct WindowGeometryObserverRegistration {
-    let observer: AXObserver
-    let source: CFRunLoopSource
-    let context: WindowGeometryObserverContext
-    let groupID: UUID
-    let processID: pid_t
-}
-
-private let windowGeometryObserverCallback: AXObserverCallback = { _, _, _, refcon in
-    guard let refcon else { return }
-    let context = Unmanaged<WindowGeometryObserverContext>.fromOpaque(refcon).takeUnretainedValue()
-    context.coordinator?.scheduleWindowBoundsSync(groupID: context.groupID, memberID: context.memberID)
-}
-
+/// Creates, restores and edits groups. Movement lives in `GroupCoordinator+Movement.swift`.
 final class GroupCoordinator: ObservableObject {
+    static let windowRefreshInterval: TimeInterval = 5
+
     let store: GroupStore
     let catalog: WindowCatalog
     @Published var statusMessage: String?
     @Published var availableWindows: [DiscoveredWindow] = []
 
-    private let strip = TabStripCoordinator()
+    let strip = TabStripCoordinator()
+    let registry = LiveWindowRegistry()
+    let observers = GeometryObserverCenter()
+    var movement = GroupMovementState()
+
     private let windowScanQueue = DispatchQueue(label: "com.4nche.TabGroups.window-scan", qos: .userInitiated)
     private var restorer: WindowRestorer?
     private var windowRefreshTimer: Timer?
+    private var activationToken: NSObjectProtocol?
     private var windowScanInProgress = false
     private var windowScanCompletions: [([DiscoveredWindow]) -> Void] = []
-    private var geometryObservers: [UUID: WindowGeometryObserverRegistration] = [:]
-    private var pendingBoundsSyncs: [UUID: DispatchWorkItem] = [:]
-    private var activeGroupMoves: [UUID: TabGroup] = [:]
+    private var hasRaisedOnRestore = false
     private var started = false
 
     init(store: GroupStore = GroupStore(), catalog: WindowCatalog = WindowCatalog()) {
@@ -50,13 +30,14 @@ final class GroupCoordinator: ObservableObject {
         self.catalog = catalog
     }
 
+    deinit {
+        if let activationToken { NSWorkspace.shared.notificationCenter.removeObserver(activationToken) }
+    }
+
     var unmatchedMembers: [(group: TabGroup, member: WindowReference)] {
         store.groups.flatMap { group in
             group.members.compactMap { member -> (group: TabGroup, member: WindowReference)? in
-                switch WindowReferenceMatcher.match(member, among: availableWindows) {
-                case .matched: return nil
-                case .ambiguous, .missing: return (group, member)
-                }
+                liveWindow(for: member) == nil ? (group, member) : nil
             }
         }
     }
@@ -65,6 +46,9 @@ final class GroupCoordinator: ObservableObject {
         guard !started else { return }
         started = true
         statusMessage = store.loadError?.localizedDescription
+        observers.onChange = { [weak self] groupID, memberID in
+            self?.memberGeometryChanged(groupID: groupID, memberID: memberID)
+        }
         if AccessibilityPermission.isGranted {
             restoreAvailableGroups()
         } else {
@@ -72,8 +56,15 @@ final class GroupCoordinator: ObservableObject {
         }
         restorer = WindowRestorer { [weak self] in self?.restoreAvailableGroups() }
         restorer?.start()
-        windowRefreshTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            self?.refreshAvailableWindows()
+        windowRefreshTimer = Timer.scheduledTimer(withTimeInterval: Self.windowRefreshInterval,
+                                                  repeats: true) { [weak self] _ in
+            self?.refreshAvailableWindows { _ in self?.refreshBars() }
+        }
+        activationToken = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            self?.applicationActivated(processID: app.processIdentifier)
         }
     }
 
@@ -99,17 +90,17 @@ final class GroupCoordinator: ObservableObject {
             let windows = self.catalog.scan()
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                self.registry.prune(keeping: windows)
                 self.availableWindows = windows
                 self.windowScanInProgress = false
-                if AccessibilityPermission.isGranted {
-                    self.store.groups.forEach(self.configureGeometryObservers)
-                }
                 let completions = self.windowScanCompletions
-                self.windowScanCompletions.removeAll()
+                self.windowScanCompletions = []
                 completions.forEach { $0(windows) }
             }
         }
     }
+
+    // MARK: - Editing groups
 
     func createGroup(windowIDs: [String]) {
         guard AccessibilityPermission.isGranted else {
@@ -121,331 +112,240 @@ final class GroupCoordinator: ObservableObject {
             guard seen.insert(id).inserted else { return nil }
             return availableWindows.first { $0.id == id }
         }
-        guard let first = selected.first, selected.count > 1,
-              var group = WindowGroupFactory.make(from: selected, displayIdentifier: displayIdentifier(for: first.bounds)) else {
+        guard let first = selected.first,
+              let made = WindowGroupFactory.make(from: selected,
+                                                 displayIdentifier: ScreenGeometry.displayIdentifier(for: first.bounds))
+        else {
             statusMessage = "Select at least two available windows to create a group."
             return
         }
+        selected.forEach { detach($0, fromOtherGroupsExcept: made.id) }
+        selected.forEach { registry.remember($0, memberID: $0.reference.id) }
 
-        for window in selected { detach(window, fromOtherGroupsExcept: group.id) }
-        var constrainedApps: [String] = []
-        for window in selected {
-            guard let actual = window.window.apply(group.bounds) else {
-                constrainedApps.append(window.appName)
-                continue
-            }
-            let delta = abs(actual.x - group.bounds.x) + abs(actual.y - group.bounds.y)
-                + abs(actual.width - group.bounds.width) + abs(actual.height - group.bounds.height)
-            if delta > 4 { constrainedApps.append(window.appName) }
-        }
-        if let actual = first.window.bounds() { group.bounds = actual }
+        // The first window keeps its place; the bar goes above it unless it touches the top edge.
+        let current = first.window.bounds() ?? first.bounds
+        var group = made
+        group.bounds = GroupGeometry.container(adopting: current,
+                                               visibleTop: ScreenGeometry.visibleTop(for: current))
+        let placed = placeAll(in: group)
         first.window.raise()
-
-        do {
-            try store.upsert(group)
-            show(group)
-            statusMessage = constrainedApps.isEmpty
-                ? "Created \(group.name) with \(group.members.count) windows."
-                : "Some apps limited their window size: \(Array(Set(constrainedApps)).joined(separator: ", "))."
-        } catch {
-            statusMessage = error.localizedDescription
-        }
+        guard persist(placed.group) else { return }
+        show(placed.group)
+        statusMessage = placed.constrainedApps.isEmpty
+            ? "Created \(group.name) with \(group.members.count) windows."
+            : "Some apps limited their window size: \(placed.constrainedApps.joined(separator: ", "))."
     }
 
     func select(groupID: UUID, memberID: UUID) {
         guard var group = store.groups.first(where: { $0.id == groupID }),
               let member = group.members.first(where: { $0.id == memberID }) else { return }
-        guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) else {
+        guard let live = liveWindow(for: member) else {
             statusMessage = "That window is unavailable. Refresh the window list and try again."
             return
         }
         live.window.raise()
-        guard let actual = live.window.apply(group.bounds) else {
+        guard let actual = place(member, in: group) else {
             statusMessage = "Could not move or resize that window."
             return
         }
         group.selectedMemberID = member.id
-        group.bounds = actual
-        updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
-        do {
-            try store.upsert(group)
-            show(group)
-            statusMessage = nil
-        } catch { statusMessage = error.localizedDescription }
+        group.members = group.members.map { $0.id == member.id ? $0.with(lastKnownBounds: actual) : $0 }
+        guard persist(group) else { return }
+        show(group)
+        statusMessage = nil
     }
 
     func removeMember(groupID: UUID, memberID: UUID) {
         guard var group = store.groups.first(where: { $0.id == groupID }) else { return }
-        group.members.removeAll { $0.id == memberID }
-        if group.members.isEmpty {
-            do { try store.removeGroup(id: groupID) } catch { statusMessage = error.localizedDescription }
-            strip.hide(groupID: groupID)
-            removeGeometryObservers(groupID: groupID)
+        group.members = group.members.filter { $0.id != memberID }
+        registry.forget(memberID: memberID)
+        guard !group.members.isEmpty else {
+            deleteGroup(group)
             return
         }
         if group.selectedMemberID == memberID { group.selectedMemberID = group.members.first?.id }
-        do {
-            try store.upsert(group)
-            if let selected = group.selectedMemberID { select(groupID: groupID, memberID: selected) }
-            else { show(group) }
-        } catch { statusMessage = error.localizedDescription }
+        guard persist(group) else { return }
+        if let selected = group.selectedMemberID {
+            select(groupID: groupID, memberID: selected)
+        } else {
+            show(group)
+        }
     }
 
     func deleteGroup(_ group: TabGroup) {
         do { try store.removeGroup(id: group.id) } catch { statusMessage = error.localizedDescription }
+        group.members.forEach { registry.forget(memberID: $0.id) }
         strip.hide(groupID: group.id)
-        removeGeometryObservers(groupID: group.id)
+        observers.stop(groupID: group.id)
+        cancelMovement(groupID: group.id)
     }
 
     func reassign(memberID: UUID, to windowID: String) {
-        guard let candidate = availableWindows.first(where: { $0.id == windowID }) else { return }
-        guard var group = store.groups.first(where: { $0.members.contains(where: { $0.id == memberID }) }),
-              let index = group.members.firstIndex(where: { $0.id == memberID }) else { return }
+        guard let candidate = availableWindows.first(where: { $0.id == windowID }),
+              var group = store.groups.first(where: { $0.members.contains { $0.id == memberID } }) else { return }
         var replacement = candidate.reference
         replacement.id = memberID
-        group.members[index] = replacement
-        if group.bounds.width <= 0 || group.bounds.height <= 0 { group.bounds = replacement.lastKnownBounds }
-        do {
-            try store.upsert(group)
-            restore(group)
-        } catch { statusMessage = error.localizedDescription }
+        group.members = group.members.map { $0.id == memberID ? replacement : $0 }
+        registry.forget(memberID: memberID)
+        registry.remember(candidate, memberID: memberID)
+        if group.bounds.width <= 0 || group.bounds.height <= 0 {
+            group.bounds = GroupGeometry.container(
+                adopting: replacement.lastKnownBounds,
+                visibleTop: ScreenGeometry.visibleTop(for: replacement.lastKnownBounds))
+        }
+        guard persist(group) else { return }
+        restore(group)
     }
 
     private func detach(_ window: DiscoveredWindow, fromOtherGroupsExcept keepID: UUID) {
-        for var group in store.groups where group.id != keepID {
-            let before = group.members.count
-            group.members.removeAll { member in
-                if case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) { return live.id == window.id }
-                return false
+        for group in store.groups where group.id != keepID {
+            let leaving = group.members.filter { member in
+                liveWindow(for: member)?.window.isSameWindow(as: window.window.element) ?? false
             }
-            guard before != group.members.count else { continue }
-            if group.members.isEmpty {
-                try? store.removeGroup(id: group.id)
-                strip.hide(groupID: group.id)
-                removeGeometryObservers(groupID: group.id)
-            } else {
-                if !group.members.contains(where: { $0.id == group.selectedMemberID }) { group.selectedMemberID = group.members.first?.id }
-                do {
-                    try store.upsert(group)
-                    restore(group)
-                } catch {
-                    statusMessage = error.localizedDescription
-                }
-            }
+            leaving.forEach { removeMember(groupID: group.id, memberID: $0.id) }
         }
     }
 
-    private func configureGeometryObservers(for group: TabGroup) {
-        let memberIDs = Set(group.members.map(\.id))
-        let staleIDs = geometryObservers.compactMap { memberID, registration in
-            registration.groupID == group.id && !memberIDs.contains(memberID) ? memberID : nil
-        }
-        staleIDs.forEach(removeGeometryObserver)
-
-        for member in group.members {
-            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows),
-                  let processID = live.reference.processID.map({ pid_t($0) }) else {
-                if geometryObservers[member.id]?.groupID == group.id { removeGeometryObserver(member.id) }
-                continue
-            }
-            if let existing = geometryObservers[member.id],
-               existing.groupID == group.id, existing.processID == processID { continue }
-            removeGeometryObserver(member.id)
-
-            var observer: AXObserver?
-            guard AXObserverCreate(processID, windowGeometryObserverCallback, &observer) == .success,
-                  let observer else { continue }
-            let context = WindowGeometryObserverContext(coordinator: self, groupID: group.id, memberID: member.id)
-            let contextPointer = Unmanaged.passUnretained(context).toOpaque()
-            let moved = AXObserverAddNotification(observer, live.window.element, kAXMovedNotification as CFString, contextPointer)
-            let resized = AXObserverAddNotification(observer, live.window.element, kAXResizedNotification as CFString, contextPointer)
-            guard moved == .success || resized == .success else { continue }
-            let source = AXObserverGetRunLoopSource(observer)
-            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-            geometryObservers[member.id] = WindowGeometryObserverRegistration(
-                observer: observer,
-                source: source,
-                context: context,
-                groupID: group.id,
-                processID: processID
-            )
-        }
-    }
-
-    private func removeGeometryObserver(_ memberID: UUID) {
-        guard let registration = geometryObservers.removeValue(forKey: memberID) else { return }
-        CFRunLoopRemoveSource(CFRunLoopGetMain(), registration.source, .commonModes)
-    }
-
-    private func removeGeometryObservers(groupID: UUID) {
-        let memberIDs = geometryObservers.compactMap { memberID, registration in
-            registration.groupID == groupID ? memberID : nil
-        }
-        memberIDs.forEach(removeGeometryObserver)
-        pendingBoundsSyncs.removeValue(forKey: groupID)?.cancel()
-    }
-
-    fileprivate func scheduleWindowBoundsSync(groupID: UUID, memberID: UUID) {
-        pendingBoundsSyncs[groupID]?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.pendingBoundsSyncs[groupID] = nil
-            self.synchronizeGroupBounds(groupID: groupID, sourceMemberID: memberID)
-        }
-        pendingBoundsSyncs[groupID] = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)
-    }
-
-    private func moveGroup(groupID: UUID, by delta: CGSize) {
-        guard delta.width != 0 || delta.height != 0,
-              var group = activeGroupMoves[groupID] ?? store.groups.first(where: { $0.id == groupID }) else { return }
-        group.bounds.x += Double(delta.width)
-        group.bounds.y += Double(delta.height)
-
-        var constrainedApps: [String] = []
-        for member in group.members {
-            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows),
-                  let actual = live.window.apply(group.bounds) else { continue }
-            let difference = abs(actual.x - group.bounds.x) + abs(actual.y - group.bounds.y)
-                + abs(actual.width - group.bounds.width) + abs(actual.height - group.bounds.height)
-            if difference > 4 { constrainedApps.append(live.appName) }
-            updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
-        }
-
-        activeGroupMoves[groupID] = group
-        strip.translate(groupID: groupID, by: delta)
-        if !constrainedApps.isEmpty {
-            statusMessage = "Some apps limited their window movement: \(Array(Set(constrainedApps)).joined(separator: ", "))."
-        }
-    }
-
-    private func finishGroupMove(groupID: UUID) {
-        guard let group = activeGroupMoves.removeValue(forKey: groupID) else { return }
-        do { try store.upsert(group) }
-        catch { statusMessage = error.localizedDescription }
-    }
-
-    private func synchronizeGroupBounds(groupID: UUID, sourceMemberID: UUID) {
-        guard var group = activeGroupMoves[groupID] ?? store.groups.first(where: { $0.id == groupID }),
-              let source = group.members.first(where: { $0.id == sourceMemberID }),
-              case .matched(let liveSource) = WindowReferenceMatcher.match(source, among: availableWindows),
-              let bounds = liveSource.window.bounds() else { return }
-        let change = abs(bounds.x - group.bounds.x) + abs(bounds.y - group.bounds.y)
-            + abs(bounds.width - group.bounds.width) + abs(bounds.height - group.bounds.height)
-        guard change > 2 else { return }
-
-        guard let actual = liveSource.window.apply(group.bounds) else { return }
-        updateReference(sourceMemberID, in: &group) { $0.lastKnownBounds = actual }
-        if activeGroupMoves[groupID] != nil {
-            activeGroupMoves[groupID] = group
-            return
-        }
-        do {
-            try store.upsert(group)
-        } catch { statusMessage = error.localizedDescription }
-    }
+    // MARK: - Restoring
 
     private func restoreAvailableGroups() {
         guard AccessibilityPermission.isGranted else { return }
         refreshAvailableWindows { [weak self] _ in
             guard let self, AccessibilityPermission.isGranted else { return }
-            self.store.groups.forEach(self.restore)
+            let raise = !self.hasRaisedOnRestore
+            self.hasRaisedOnRestore = true
+            self.store.groups.forEach { self.restore($0, raisingSelected: raise) }
         }
     }
 
-    private func restore(_ original: TabGroup) {
-        guard var group = store.groups.first(where: { $0.id == original.id }) else { return }
-        var changed = false
-        var availableMemberIDs = Set<UUID>()
-        for index in group.members.indices {
-            if case .matched(let live) = WindowReferenceMatcher.match(group.members[index], among: availableWindows) {
-                group.members[index].processID = live.reference.processID
-                group.members[index].lastKnownBounds = live.bounds
-                availableMemberIDs.insert(group.members[index].id)
-                changed = true
-            }
-        }
-        if !availableMemberIDs.contains(group.selectedMemberID ?? UUID()),
-           let fallback = group.members.first(where: { availableMemberIDs.contains($0.id) }) {
-            group.selectedMemberID = fallback.id
-            changed = true
-        }
-        guard !availableMemberIDs.isEmpty else {
+    /// Reconnects a group to its open windows and puts them back in the container. Only the first
+    /// restore after launch raises the selected window, so an unrelated app launch never steals focus.
+    private func restore(_ original: TabGroup, raisingSelected: Bool = false) {
+        guard var group = store.groups.first(where: { $0.id == original.id }),
+              !isMoving(groupID: group.id) else { return }
+        let available = group.members.filter { liveWindow(for: $0) != nil }
+        guard !available.isEmpty else {
             strip.hide(groupID: group.id)
-            if changed { try? store.upsert(group) }
+            observers.stop(groupID: group.id)
             return
         }
-        if changed { try? store.upsert(group) }
-        for member in group.members where member.id != group.selectedMemberID {
-            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) else { continue }
-            if let actual = live.window.apply(group.bounds) {
-                updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
-            }
+        group.members = group.members.map { member in
+            guard let live = liveWindow(for: member) else { return member }
+            var updated = member
+            updated.processID = live.reference.processID
+            return updated
         }
-        guard let selectedID = group.selectedMemberID,
-              let selected = group.members.first(where: { $0.id == selectedID }),
-              case .matched(let live) = WindowReferenceMatcher.match(selected, among: availableWindows) else { return }
-        _ = live.window.apply(group.bounds)
-        live.window.raise()
-        show(group)
+        if !available.contains(where: { $0.id == group.selectedMemberID }) {
+            group.selectedMemberID = available.first?.id
+        }
+        group.bounds = GroupGeometry.shiftedIntoView(group.bounds, visibleTop: ScreenGeometry.visibleTop(for: group.bounds))
+        let placed = placeAll(in: group)
+        if raisingSelected, let selected = placed.group.members.first(where: { $0.id == placed.group.selectedMemberID }) {
+            liveWindow(for: selected)?.window.raise()
+        }
+        if placed.group != original { _ = persist(placed.group) }
+        show(placed.group)
     }
 
-    private func show(_ group: TabGroup) {
-        configureGeometryObservers(for: group)
-        let labels = Dictionary(uniqueKeysWithValues: group.members.map { member in
-            let app = NSRunningApplication(processIdentifier: pid_t(member.processID ?? -1))?.localizedName ?? member.bundleIdentifier
-            return (member.id, (app: app, title: member.title ?? "Window"))
-        })
-        strip.show(group, titles: labels,
+    // MARK: - Shared helpers
+
+    func liveWindow(for member: WindowReference) -> DiscoveredWindow? {
+        registry.window(for: member, among: availableWindows)
+    }
+
+    /// Places a member at the group's content rectangle and records what the window actually took.
+    @discardableResult
+    func place(_ member: WindowReference, in group: TabGroup) -> WindowBounds? {
+        guard let live = liveWindow(for: member),
+              let actual = live.window.apply(GroupGeometry.contentBounds(of: group.bounds)) else { return nil }
+        registry.recordApplied(actual, memberID: member.id)
+        return actual
+    }
+
+    /// Places every reachable member; returns the group with refreshed member bounds and the apps
+    /// that did not take the requested rectangle.
+    func placeAll(in group: TabGroup) -> (group: TabGroup, constrainedApps: [String]) {
+        let content = GroupGeometry.contentBounds(of: group.bounds)
+        var constrained = Set<String>()
+        var updated = group
+        updated.members = group.members.map { member in
+            guard let actual = place(member, in: group) else { return member }
+            if actual.distance(to: content) > GroupGeometry.tolerance, let live = liveWindow(for: member) {
+                constrained.insert(live.appName)
+            }
+            return member.with(lastKnownBounds: actual)
+        }
+        return (updated, constrained.sorted())
+    }
+
+    @discardableResult
+    func persist(_ group: TabGroup) -> Bool {
+        do {
+            try store.upsert(group)
+            return true
+        } catch {
+            statusMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func show(_ group: TabGroup) {
+        observers.observe(group: group, resolve: liveWindow(for:))
+        strip.show(group, tabs: tabs(for: group),
                    select: { [weak self] id in self?.select(groupID: group.id, memberID: id) },
                    remove: { [weak self] id in self?.removeMember(groupID: group.id, memberID: id) },
-                   move: { [weak self] delta in self?.moveGroup(groupID: group.id, by: delta) },
-                   moveEnded: { [weak self] in self?.finishGroupMove(groupID: group.id) },
+                   dragChanged: { [weak self] offset in self?.barDragChanged(groupID: group.id, offset: offset) },
+                   dragEnded: { [weak self] in self?.barDragEnded(groupID: group.id) },
                    memberWindowNumbers: memberWindowNumbers(for: group))
     }
 
-    private func memberWindowNumbers(for group: TabGroup) -> [CGWindowID] {
-        guard let rawWindows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else {
+    /// Refreshes tab titles and stacking for groups that are not being moved right now.
+    private func refreshBars() {
+        guard AccessibilityPermission.isGranted else { return }
+        store.groups.filter { !isMoving(groupID: $0.id) }.forEach { group in
+            guard group.members.contains(where: { liveWindow(for: $0) != nil }) else { return }
+            show(group)
+        }
+    }
+
+    private func tabs(for group: TabGroup) -> [TabItem] {
+        group.members.map { member in
+            let live = liveWindow(for: member)
+            let app = member.processID.flatMap { NSRunningApplication(processIdentifier: pid_t($0)) }
+            return TabItem(
+                id: member.id,
+                appName: live?.appName ?? app?.localizedName ?? member.bundleIdentifier,
+                title: live?.window.readString(kAXTitleAttribute as CFString) ?? member.title ?? "Window",
+                icon: app?.icon
+            )
+        }
+    }
+
+    func memberWindowNumbers(for group: TabGroup) -> [CGWindowID] {
+        guard let raw = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
-        let windows: [(number: CGWindowID, processID: Int32, title: String?, bounds: CGRect?)] = rawWindows.compactMap { info in
+        let onScreen: [(number: CGWindowID, processID: Int32, bounds: WindowBounds)] = raw.compactMap { info in
             guard let number = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
-                  let processID = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value else { return nil }
-            let title = info[kCGWindowName as String] as? String
-            let bounds = (info[kCGWindowBounds as String] as? NSDictionary)
-                .flatMap { CGRect(dictionaryRepresentation: $0) }
-            return (number, processID, title, bounds)
+                  let processID = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                  let rect = (info[kCGWindowBounds as String] as? NSDictionary)
+                    .flatMap({ CGRect(dictionaryRepresentation: $0) }) else { return nil }
+            return (number, processID, WindowBounds(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height))
         }
-
         return group.members.compactMap { member in
-            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows),
-                  let bounds = live.window.bounds() else { return nil }
-            let candidates = windows.filter { $0.processID == live.window.processID }
-            let titleMatches = candidates.filter { $0.title == member.title }
-            let ranked = titleMatches.isEmpty ? candidates : titleMatches
-            return ranked.min { left, right in
-                windowBoundsDistance(left.bounds, bounds) < windowBoundsDistance(right.bounds, bounds)
-            }?.number
+            guard let live = liveWindow(for: member), let bounds = live.window.bounds() else { return nil }
+            return onScreen
+                .filter { $0.processID == live.window.processID }
+                .min { $0.bounds.distance(to: bounds) < $1.bounds.distance(to: bounds) }?
+                .number
         }
     }
+}
 
-    private func windowBoundsDistance(_ rect: CGRect?, _ bounds: WindowBounds) -> Double {
-        guard let rect else { return .greatestFiniteMagnitude }
-        return abs(Double(rect.minX) - bounds.x) + abs(Double(rect.minY) - bounds.y)
-            + abs(Double(rect.width) - bounds.width) + abs(Double(rect.height) - bounds.height)
-    }
-
-    private func updateReference(_ id: UUID, in group: inout TabGroup, update: (inout WindowReference) -> Void) {
-        guard let index = group.members.firstIndex(where: { $0.id == id }) else { return }
-        update(&group.members[index])
-    }
-
-    private func displayIdentifier(for bounds: WindowBounds) -> String? {
-        guard let screen = NSScreen.screens.first(where: {
-            let point = CGPoint(x: CGFloat(bounds.x + bounds.width / 2),
-                                y: $0.frame.maxY - CGFloat(bounds.y + bounds.height / 2))
-            return $0.frame.contains(point)
-        }), let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
-        return number.stringValue
+extension WindowReference {
+    func with(lastKnownBounds bounds: WindowBounds) -> WindowReference {
+        var copy = self
+        copy.lastKnownBounds = bounds
+        return copy
     }
 }

@@ -10,7 +10,7 @@ struct UnmatchedWindowView: View {
         if !members.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Saved tabs to reconnect")
-                    .font(.headline)
+                    .font(.system(size: 13, weight: .medium))
                 ForEach(members.indices, id: \.self) { index in
                     let item = members[index]
                     HStack {

@@ -1,65 +1,27 @@
 import AppKit
 import SwiftUI
 
-private struct GroupFrameView: View {
-    var body: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(Color.primary.opacity(0.24), lineWidth: 1.25)
-            .padding(1)
-    }
+/// Lets a click act on a tab even though the bar's panel is never the key window.
+private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-final class GroupFramePanel: NSPanel {
-    init() {
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        level = .normal
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = false
-        ignoresMouseEvents = true
-        hidesOnDeactivate = false
-        collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
-        contentView = NSHostingView(rootView: GroupFrameView())
-    }
-
-    func show(bounds: WindowBounds) {
-        let rect = WindowScreenGeometry.appKitRect(for: bounds)
-        setFrame(rect, display: true)
-    }
-
-    func translate(by delta: CGSize) {
-        setFrameOrigin(NSPoint(x: frame.origin.x + delta.width, y: frame.origin.y - delta.height))
-    }
-
-    func orderAbove(windowNumber: Int) {
-        order(.above, relativeTo: windowNumber)
-    }
-}
-
-private enum WindowScreenGeometry {
-    static var mainDisplayMaxY: CGFloat {
-        NSScreen.screens.first {
-            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == CGMainDisplayID()
-        }?.frame.maxY ?? NSScreen.screens.first?.frame.maxY ?? 0
-    }
-
-    static func appKitRect(for bounds: WindowBounds) -> NSRect {
-        NSRect(x: CGFloat(bounds.x),
-               y: mainDisplayMaxY - CGFloat(bounds.y + bounds.height),
-               width: CGFloat(bounds.width),
-               height: CGFloat(bounds.height))
-    }
-}
-
+/// The bar window of one group. Dragging it anywhere reports the offset since mouse-down in
+/// screen coordinates, so moving the panel during the drag cannot distort the measurement.
 final class TabStripPanel: NSPanel {
+    /// Total offset since mouse-down, Accessibility axes (positive height = down).
+    var onDragChanged: ((CGSize) -> Void)?
+    var onDragEnded: (() -> Void)?
+
+    private static let dragThreshold: CGFloat = 3
+    private let host = FirstMouseHostingView(rootView: TabStripView(tabs: [], selectedID: nil, glass: .regular,
+                                                            onSelect: { _ in }, onRemove: { _ in }))
+    private var mouseDownLocation: NSPoint?
+    private var isDragging = false
+
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 42),
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: GroupGeometry.barHeight),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -68,34 +30,56 @@ final class TabStripPanel: NSPanel {
         level = .normal
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        hasShadow = false
         hidesOnDeactivate = false
+        isMovable = false
         collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
-    }
-
-    func show(group: TabGroup, windowTitles: [UUID: (app: String, title: String)],
-              onSelect: @escaping (UUID) -> Void, onRemove: @escaping (UUID) -> Void,
-              onMove: @escaping (CGSize) -> Void, onMoveEnded: @escaping () -> Void) {
-        let view = TabStripView(group: group, windowTitles: windowTitles,
-                                onSelect: onSelect, onRemove: onRemove,
-                                onMove: onMove, onMoveEnded: onMoveEnded)
-        let host = NSHostingView(rootView: view)
         contentView = host
-        host.layoutSubtreeIfNeeded()
-        let target = group.bounds
-        let groupRect = WindowScreenGeometry.appKitRect(for: target)
-        let fittingSize = host.fittingSize
-        let width = min(fittingSize.width, NSScreen.main?.visibleFrame.width ?? fittingSize.width)
-        let height = fittingSize.height
-        setFrame(NSRect(x: groupRect.minX, y: groupRect.maxY,
-                        width: width, height: height), display: true)
     }
 
-    func translate(by delta: CGSize) {
-        setFrameOrigin(NSPoint(x: frame.origin.x + delta.width, y: frame.origin.y - delta.height))
+    func update(tabs: [TabItem], selectedID: UUID?,
+                onSelect: @escaping (UUID) -> Void, onRemove: @escaping (UUID) -> Void) {
+        host.rootView = TabStripView(tabs: tabs, selectedID: selectedID, glass: GlassPreference.current,
+                                     onSelect: onSelect, onRemove: onRemove)
     }
 
-    func orderAbove(windowNumber: Int) {
-        order(.above, relativeTo: windowNumber)
+    func place(at container: WindowBounds) {
+        setFrame(ScreenGeometry.appKitRect(for: GroupGeometry.barBackdropBounds(of: container)), display: true)
+    }
+
+    /// Directly beneath the group's front window: the window covers the part of the panel that
+    /// reaches behind it, and only its rounded corners let the bar's surface show through.
+    func orderBelow(windowNumber: Int) {
+        order(.below, relativeTo: windowNumber)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            // A mouse-up lost to another window must not leave the group stuck in a drag.
+            if isDragging { onDragEnded?() }
+            mouseDownLocation = NSEvent.mouseLocation
+            isDragging = false
+            super.sendEvent(event)
+        case .leftMouseDragged:
+            guard let start = mouseDownLocation else { return super.sendEvent(event) }
+            let now = NSEvent.mouseLocation
+            if !isDragging, hypot(now.x - start.x, now.y - start.y) > Self.dragThreshold {
+                isDragging = true
+            }
+            guard isDragging else { return super.sendEvent(event) }
+            onDragChanged?(CGSize(width: now.x - start.x, height: start.y - now.y))
+        case .leftMouseUp:
+            let wasDragging = isDragging
+            mouseDownLocation = nil
+            isDragging = false
+            if wasDragging {
+                onDragEnded?()
+            } else {
+                super.sendEvent(event)
+            }
+        default:
+            super.sendEvent(event)
+        }
     }
 }
