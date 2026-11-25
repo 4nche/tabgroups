@@ -10,13 +10,14 @@ struct StatusMenuView: View {
             openWindow(id: "groups")
         }
 
+        Button("Create a Group…") {
+            openWindow(id: "groups")
+        }
+
         Button("Accessibility Permission…") {
             coordinator.permissionWasGranted()
             AccessibilityPermission.openSettings()
         }
-
-        Text("Enter Tab Group Mode: Shift, ~, Shift, ~, Shift, ~")
-            .font(.caption)
 
         Divider()
 
@@ -30,15 +31,23 @@ struct StatusMenuView: View {
 struct GroupsWindowView: View {
     @ObservedObject var coordinator: GroupCoordinator
     @ObservedObject var store: GroupStore
+    @State private var selectedWindowIDs: [String] = []
+    @State private var searchText = ""
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 12) {
+            WindowSelectionPicker(
+                coordinator: coordinator,
+                selectedWindowIDs: $selectedWindowIDs,
+                searchText: $searchText
+            )
+
+            Divider()
+
             if store.groups.isEmpty {
-                ContentUnavailableView {
-                    Label("No tab groups yet", systemImage: "rectangle.on.rectangle")
-                } description: {
-                    Text("Enter Tab Group Mode with Shift, ~, Shift, ~, Shift, ~. Then drag one app window onto another; press Escape to exit mode.")
-                }
+                ContentUnavailableView("No groups yet", systemImage: "rectangle.on.rectangle",
+                                       description: Text("Select two or more windows above and click Group."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(store.groups) { group in
                     HStack {
@@ -59,11 +68,10 @@ struct GroupsWindowView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    .padding(.vertical, 3)
                 }
             }
         }
-        .frame(minWidth: 360, minHeight: 260)
+        .frame(minWidth: 500, minHeight: 560)
         .padding()
         .safeAreaInset(edge: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 10) {
@@ -87,5 +95,108 @@ struct GroupsWindowView: View {
             .padding(.horizontal)
             .padding(.top)
         }
+    }
+}
+
+private struct WindowSelectionPicker: View {
+    @ObservedObject var coordinator: GroupCoordinator
+    @Binding var selectedWindowIDs: [String]
+    @Binding var searchText: String
+
+    private var visibleWindows: [DiscoveredWindow] {
+        coordinator.availableWindows
+            .filter { window in
+                searchText.isEmpty
+                    || window.appName.localizedCaseInsensitiveContains(searchText)
+                    || (window.reference.title ?? "").localizedCaseInsensitiveContains(searchText)
+            }
+            .sorted {
+                if $0.appName != $1.appName { return $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
+                return ($0.reference.title ?? "").localizedCaseInsensitiveCompare($1.reference.title ?? "") == .orderedAscending
+            }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Create a Group").font(.title3.weight(.semibold))
+                Spacer()
+                Text("\(selectedWindowIDs.count) selected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            TextField("Search apps and windows", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+
+            if visibleWindows.isEmpty {
+                ContentUnavailableView("No accessible windows", systemImage: "macwindow",
+                                       description: Text("Open an app window or enable Accessibility access."))
+                    .frame(height: 130)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 3) {
+                        ForEach(visibleWindows) { window in
+                            windowRow(window)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .frame(maxHeight: 190)
+            }
+
+            HStack {
+                Text("The first selected window sets the group’s size and position.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Group \(selectedWindowIDs.count) Windows") {
+                    coordinator.createGroup(windowIDs: selectedWindowIDs)
+                    selectedWindowIDs.removeAll()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(selectedWindowIDs.count < 2)
+            }
+        }
+    }
+
+    private func windowRow(_ window: DiscoveredWindow) -> some View {
+        let selected = selectedWindowIDs.contains(window.id)
+        return Button {
+            if let index = selectedWindowIDs.firstIndex(of: window.id) {
+                selectedWindowIDs.remove(at: index)
+            } else {
+                selectedWindowIDs.append(window.id)
+            }
+        } label: {
+            HStack(spacing: 9) {
+                if let processID = window.reference.processID,
+                   let icon = NSRunningApplication(processIdentifier: pid_t(processID))?.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 22, height: 22)
+                } else {
+                    Image(systemName: "macwindow")
+                        .frame(width: 22, height: 22)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(window.appName).font(.system(size: 12, weight: .medium))
+                    Text(window.reference.title ?? "Window")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .background(selected ? Color.accentColor.opacity(0.1) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
     }
 }
