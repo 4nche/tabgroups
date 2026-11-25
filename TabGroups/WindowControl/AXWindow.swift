@@ -42,7 +42,7 @@ struct AXWindow {
 
     func raise() {
         if let app = NSRunningApplication(processIdentifier: processID) {
-            app.activate(options: [.activateIgnoringOtherApps])
+            app.activate(options: [])
         }
         _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
         _ = AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
