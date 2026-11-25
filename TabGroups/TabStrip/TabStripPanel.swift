@@ -17,13 +17,13 @@ final class GroupFramePanel: NSPanel {
             backing: .buffered,
             defer: false
         )
-        level = .floating
+        level = .normal
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
         ignoresMouseEvents = true
         hidesOnDeactivate = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
         contentView = NSHostingView(rootView: GroupFrameView())
     }
 
@@ -57,13 +57,13 @@ final class TabStripPanel: NSPanel {
             backing: .buffered,
             defer: false
         )
-        isFloatingPanel = true
-        level = .floating
+        isFloatingPanel = false
+        level = .normal
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
         hidesOnDeactivate = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
     }
 
     func show(group: TabGroup, windowTitles: [UUID: (app: String, title: String)],
