@@ -79,14 +79,33 @@ final class DragFeedbackPanel: NSPanel {
 
     func present(_ message: String, kind: DragFeedbackKind, at point: NSPoint, hideAfter delay: TimeInterval? = nil) {
         hideWorkItem?.cancel()
+        setContent(message, kind: kind)
+        position(near: point)
+        orderFrontRegardless()
+
+        scheduleHide(after: delay)
+    }
+
+    func presentAtTop(_ message: String, kind: DragFeedbackKind, hideAfter delay: TimeInterval? = nil) {
+        hideWorkItem?.cancel()
+        setContent(message, kind: kind)
+        let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
+        setFrameOrigin(NSPoint(x: visibleFrame.midX - frame.width / 2,
+                               y: visibleFrame.maxY - frame.height - 10))
+        orderFrontRegardless()
+
+        scheduleHide(after: delay)
+    }
+
+    private func setContent(_ message: String, kind: DragFeedbackKind) {
         if let host = contentView as? NSHostingView<DragFeedbackView> {
             host.rootView = DragFeedbackView(message: message, kind: kind)
         } else {
             contentView = NSHostingView(rootView: DragFeedbackView(message: message, kind: kind))
         }
-        position(near: point)
-        orderFrontRegardless()
+    }
 
+    private func scheduleHide(after delay: TimeInterval?) {
         if let delay {
             let work = DispatchWorkItem { [weak self] in self?.orderOut(nil) }
             hideWorkItem = work
