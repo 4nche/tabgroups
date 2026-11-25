@@ -5,15 +5,30 @@ import Combine
 /// Creates, restores and edits groups. Movement lives in `GroupCoordinator+Movement.swift`.
 final class GroupCoordinator: ObservableObject {
     static let windowRefreshInterval: TimeInterval = 5
+    static let popOutOffset: Double = 36
 
     let store: GroupStore
     let catalog: WindowCatalog
+    @Published var showTabSwitcher = (UserDefaults.standard.object(forKey: "showMissionControlTabSwitcher") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(showTabSwitcher, forKey: "showMissionControlTabSwitcher") }
+    }
+    @Published var showAllWindowsInMissionControl = UserDefaults.standard.bool(forKey: "showAllWindowsInMissionControl") {
+        didSet {
+            UserDefaults.standard.set(showAllWindowsInMissionControl, forKey: "showAllWindowsInMissionControl")
+            if showAllWindowsInMissionControl {
+                revealGroupedWindowsForOverview()
+            } else {
+                for group in store.groups { concealUnselected(in: group) }
+            }
+        }
+    }
     @Published var statusMessage: String?
     @Published var availableWindows: [DiscoveredWindow] = []
 
     let strip = TabStripCoordinator()
     let registry = LiveWindowRegistry()
     let observers = GeometryObserverCenter()
+    let missionControl = MissionControlOverlay()
     var movement = GroupMovementState()
 
     private let windowScanQueue = DispatchQueue(label: "com.4nche.TabGroups.window-scan", qos: .userInitiated)
@@ -21,9 +36,16 @@ final class GroupCoordinator: ObservableObject {
     private var restorer: WindowRestorer?
     private var windowRefreshTimer: Timer?
     private var activationToken: NSObjectProtocol?
+    private var terminationToken: NSObjectProtocol?
+    private var appQuitToken: NSObjectProtocol?
+    private var powerOffToken: NSObjectProtocol?
+    /// Set while the Mac shuts down or logs out: apps quitting then must not empty the groups.
+    var isPoweringOff = false
     private var windowScanInProgress = false
     private var windowScanCompletions: [([DiscoveredWindow]) -> Void] = []
     private var hasRaisedOnRestore = false
+    private var minimizedWindows: [AXWindow] = []
+    private var hiddenApps: [pid_t: NSRunningApplication] = [:]
     private var started = false
 
     init(store: GroupStore = GroupStore(), catalog: WindowCatalog = WindowCatalog()) {
@@ -33,6 +55,9 @@ final class GroupCoordinator: ObservableObject {
 
     deinit {
         if let activationToken { NSWorkspace.shared.notificationCenter.removeObserver(activationToken) }
+        if let terminationToken { NotificationCenter.default.removeObserver(terminationToken) }
+        if let appQuitToken { NSWorkspace.shared.notificationCenter.removeObserver(appQuitToken) }
+        if let powerOffToken { NSWorkspace.shared.notificationCenter.removeObserver(powerOffToken) }
     }
 
     var unmatchedMembers: [(group: TabGroup, member: WindowReference)] {
@@ -50,6 +75,9 @@ final class GroupCoordinator: ObservableObject {
         observers.onChange = { [weak self] groupID, memberID in
             self?.memberGeometryChanged(groupID: groupID, memberID: memberID)
         }
+        observers.onDestroyed = { [weak self] groupID, memberID in
+            self?.memberWindowClosed(groupID: groupID, memberID: memberID)
+        }
         if AccessibilityPermission.isGranted {
             restoreAvailableGroups()
         } else {
@@ -57,6 +85,10 @@ final class GroupCoordinator: ObservableObject {
         }
         dragGrouping = ShiftDragMonitor(coordinator: self)
         dragGrouping?.start()
+        missionControl.onOverviewOpened = { [weak self] in self?.revealGroupedWindowsForOverview() }
+        missionControl.groups = { [weak self] in self?.missionControlGroups() ?? [] }
+        missionControl.onSelect = { [weak self] groupID, memberID in self?.select(groupID: groupID, memberID: memberID) }
+        missionControl.start()
         restorer = WindowRestorer { [weak self] in self?.restoreAvailableGroups() }
         restorer?.start()
         windowRefreshTimer = Timer.scheduledTimer(withTimeInterval: Self.windowRefreshInterval,
@@ -68,6 +100,22 @@ final class GroupCoordinator: ObservableObject {
         ) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             self?.applicationActivated(processID: app.processIdentifier)
+        }
+        appQuitToken = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            self?.applicationTerminated(processID: app.processIdentifier)
+        }
+        powerOffToken = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.isPoweringOff = true
+        }
+        terminationToken = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.revealAll()
         }
     }
 
@@ -137,9 +185,11 @@ final class GroupCoordinator: ObservableObject {
                                                visibleTop: ScreenGeometry.visibleTop(for: current))
         group.selectedMemberID = (selected ?? first).reference.id
         let placed = placeAll(in: group)
+        reveal((selected ?? first).window)
         (selected ?? first).window.raise()
         guard persist(placed.group) else { return }
         show(placed.group)
+        concealUnselected(in: placed.group)
         statusMessage = placed.constrainedApps.isEmpty
             ? "Created \(group.name) with \(group.members.count) windows."
             : "Some apps limited their window size: \(placed.constrainedApps.joined(separator: ", "))."
@@ -152,6 +202,7 @@ final class GroupCoordinator: ObservableObject {
             statusMessage = "That window is unavailable. Refresh the window list and try again."
             return
         }
+        reveal(live.window)
         live.window.raise()
         guard let actual = place(member, in: group) else {
             statusMessage = "Could not move or resize that window."
@@ -161,14 +212,26 @@ final class GroupCoordinator: ObservableObject {
         group.members = group.members.map { $0.id == member.id ? $0.with(lastKnownBounds: actual) : $0 }
         guard persist(group) else { return }
         show(group)
+        concealUnselected(in: group)
         statusMessage = nil
     }
 
     func removeMember(groupID: UUID, memberID: UUID) {
         guard var group = store.groups.first(where: { $0.id == groupID }) else { return }
+        // A tab removed with its close button pops out a little, so its window is not lost behind the group.
+        var poppedOut: AXWindow?
+        if let leaving = group.members.first(where: { $0.id == memberID }), let live = liveWindow(for: leaving) {
+            reveal(live.window)
+            if movement.tornTabs[memberID] == nil, let bounds = live.window.bounds() {
+                _ = live.window.move(to: bounds.translated(dx: Self.popOutOffset, dy: Self.popOutOffset))
+                poppedOut = live.window
+            }
+        }
+        defer { poppedOut?.raise() }
         group.members = group.members.filter { $0.id != memberID }
         registry.forget(memberID: memberID)
-        guard !group.members.isEmpty else {
+        // A group of one is just a window with a bar on it: it dissolves.
+        guard group.members.count >= 2 else {
             deleteGroup(group)
             return
         }
@@ -183,6 +246,7 @@ final class GroupCoordinator: ObservableObject {
 
     func deleteGroup(_ group: TabGroup) {
         do { try store.removeGroup(id: group.id) } catch { statusMessage = error.localizedDescription }
+        group.members.compactMap { liveWindow(for: $0)?.window }.forEach(reveal)
         group.members.forEach { registry.forget(memberID: $0.id) }
         strip.hide(groupID: group.id)
         observers.stop(groupID: group.id)
@@ -249,11 +313,14 @@ final class GroupCoordinator: ObservableObject {
         }
         group.bounds = GroupGeometry.shiftedIntoView(group.bounds, visibleTop: ScreenGeometry.visibleTop(for: group.bounds))
         let placed = placeAll(in: group)
-        if raisingSelected, let selected = placed.group.members.first(where: { $0.id == placed.group.selectedMemberID }) {
-            liveWindow(for: selected)?.window.raise()
+        if raisingSelected, let selected = placed.group.members.first(where: { $0.id == placed.group.selectedMemberID }),
+           let live = liveWindow(for: selected) {
+            reveal(live.window)
+            live.window.raise()
         }
         if placed.group != original { _ = persist(placed.group) }
         show(placed.group)
+        concealUnselected(in: placed.group)
     }
 
     // MARK: - Shared helpers
@@ -316,8 +383,37 @@ final class GroupCoordinator: ObservableObject {
     private func refreshBars() {
         guard AccessibilityPermission.isGranted else { return }
         store.groups.filter { !isMoving(groupID: $0.id) }.forEach { group in
-            guard group.members.contains(where: { liveWindow(for: $0) != nil }) else { return }
+            guard let next = group.members.first(where: { liveWindow(for: $0) != nil }) else { return }
+            // The selected tab's window went away unnoticed: bring the next one up instead of an empty group.
+            if let selected = group.members.first(where: { $0.id == group.selectedMemberID }),
+               liveWindow(for: selected) == nil, let live = liveWindow(for: next) {
+                var healed = group
+                healed.selectedMemberID = next.id
+                persist(healed)
+                reveal(live.window)
+                show(healed)
+                concealUnselected(in: healed)
+                return
+            }
             show(group)
+        }
+    }
+
+    /// Each group's visible window and tabs, for the bar laid over Mission Control.
+    private func missionControlGroups() -> [MissionControlGroup] {
+        guard showTabSwitcher else { return [] }
+        return store.groups.compactMap { group in
+            guard let selected = group.members.first(where: { $0.id == group.selectedMemberID }),
+                  let live = liveWindow(for: selected),
+                  let bounds = live.window.bounds() else { return nil }
+            let title = live.window.readString(kAXTitleAttribute as CFString)
+            let sameTitle = availableWindows.filter { $0.reference.title == title }
+            let uniqueTitle = sameTitle.count == 1 && sameTitle.first?.window.isSameWindow(as: live.window.element) == true
+            return MissionControlGroup(groupID: group.id, name: group.name,
+                                       windowNumber: MissionControlOverlay.windowNumber(of: live.window.element),
+                                       windowTitle: title, allowsTitleMatch: uniqueTitle,
+                                       windowBounds: bounds, tabs: tabs(for: group),
+                                       selectedID: group.selectedMemberID)
         }
     }
 
@@ -360,5 +456,146 @@ extension WindowReference {
         var copy = self
         copy.lastKnownBounds = bounds
         return copy
+    }
+}
+
+// MARK: - Keeping only the selected tab on screen
+
+/// A group's tabs that are not selected are taken off screen, so Mission Control, App Exposé and
+/// Show Desktop see one window per group instead of the whole stack. The app of an unselected tab
+/// is hidden when that tab is its only open window, which is instant; otherwise the window is
+/// minimised, so the app's other windows stay where they are.
+extension GroupCoordinator {
+    /// Gives the newly selected window a moment to come forward before the others leave, so hiding
+    /// the app that was in front never hands focus to an unrelated app.
+    static let concealDelay: TimeInterval = 0.15
+
+    func concealUnselected(in group: TabGroup, after delay: TimeInterval = concealDelay) {
+        let groupID = group.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, !self.showAllWindowsInMissionControl,
+                  let current = self.store.groups.first(where: { $0.id == groupID }),
+                  !self.isMoving(groupID: groupID) else { return }
+            for member in current.members where member.id != current.selectedMemberID {
+                guard let live = self.liveWindow(for: member) else { continue }
+                self.conceal(live.window)
+            }
+        }
+    }
+
+    func reveal(_ window: AXWindow) {
+        if let app = NSRunningApplication(processIdentifier: window.processID), !app.isHidden || app.unhide() {
+            hiddenApps.removeValue(forKey: window.processID)
+        }
+        if !window.isMinimized || window.setMinimized(false) {
+            minimizedWindows.removeAll { $0.isSameWindow(as: window.element) }
+        }
+    }
+
+    private func revealGroupedWindowsForOverview() {
+        guard showAllWindowsInMissionControl else { return }
+        for group in store.groups {
+            for member in group.members {
+                if let live = liveWindow(for: member) { reveal(live.window) }
+            }
+        }
+    }
+
+    /// Restores visibility changes made by Tab Groups.
+    func revealAll() {
+        hiddenApps = hiddenApps.filter { _, app in
+            !app.isTerminated && app.isHidden && !app.unhide()
+        }
+        minimizedWindows.removeAll { window in
+            !window.isMinimized || window.setMinimized(false)
+        }
+    }
+
+    private func conceal(_ window: AXWindow) {
+        guard let app = NSRunningApplication(processIdentifier: window.processID),
+              !app.isHidden, !window.isMinimized else { return }
+        if canHide(app) {
+            if app.hide() { hiddenApps[app.processIdentifier] = app }
+        } else if window.setMinimized(true), !minimizedWindows.contains(where: { $0.isSameWindow(as: window.element) }) {
+            minimizedWindows.append(window)
+        }
+    }
+
+    /// An app can be hidden only when every window it has on screen is an unselected tab of some group.
+    private func canHide(_ app: NSRunningApplication) -> Bool {
+        let concealable = store.groups.flatMap { group in
+            group.members
+                .filter { $0.id != group.selectedMemberID }
+                .compactMap { liveWindow(for: $0)?.window }
+                .filter { $0.processID == app.processIdentifier }
+        }
+        guard !concealable.isEmpty else { return false }
+        let windows = AXWindow.windows(ofProcess: app.processIdentifier)
+        guard !windows.isEmpty else { return false }
+        return windows.allSatisfy { window in
+            if window.isMinimized || window.isFinderDesktop { return true }
+            if let bounds = window.bounds(), bounds.width <= 80 || bounds.height <= 60 { return true }
+            return concealable.contains { $0.isSameWindow(as: window.element) }
+        }
+    }
+}
+
+// MARK: - Windows that close and apps that quit
+
+extension GroupCoordinator {
+    /// A member window reported itself destroyed. Checked again a moment later: some apps rebuild a
+    /// window (for example around full screen) and the handle can still answer.
+    func memberWindowClosed(groupID: UUID, memberID: UUID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, !self.isPoweringOff,
+                  let group = self.store.groups.first(where: { $0.id == groupID }),
+                  let member = group.members.first(where: { $0.id == memberID }) else { return }
+            if let live = self.liveWindow(for: member), !live.window.isInvalid { return }
+            self.dropClosedMembers([memberID], from: groupID)
+        }
+    }
+
+    /// An app quit: its tabs leave their groups, and a group whose visible tab it was shows the next one.
+    func applicationTerminated(processID: pid_t) {
+        guard !isPoweringOff else { return }
+        availableWindows.removeAll { $0.window.processID == processID }
+        for group in store.groups {
+            let gone = group.members.filter { member in
+                registry.handleProcessID(for: member.id) == processID
+                    || (registry.handleProcessID(for: member.id) == nil && member.processID == processID)
+            }
+            guard !gone.isEmpty else { continue }
+            dropClosedMembers(Set(gone.map(\.id)), from: group.id)
+        }
+    }
+
+    /// Takes closed windows out of a group. A group left with one tab dissolves; otherwise the next
+    /// tab comes forward when the visible one was closed.
+    private func dropClosedMembers(_ memberIDs: Set<UUID>, from groupID: UUID) {
+        guard var group = store.groups.first(where: { $0.id == groupID }) else { return }
+        let wasSelected = group.selectedMemberID.map(memberIDs.contains) ?? false
+        let processIDs = Set(memberIDs.compactMap { registry.handleProcessID(for: $0) })
+        memberIDs.forEach { registry.forget(memberID: $0) }
+        // Stale scan entries of the closed windows must not be matched back into the group.
+        availableWindows.removeAll { processIDs.contains($0.window.processID) && $0.window.isInvalid }
+        group.members.removeAll { memberIDs.contains($0.id) }
+
+        guard group.members.count >= 2 else {
+            let last = group.members.first.flatMap { liveWindow(for: $0)?.window }
+            deleteGroup(group)
+            if wasSelected { last?.raise() }
+            statusMessage = "\(group.name) was ungrouped: only one window was left."
+            return
+        }
+        if wasSelected {
+            group.selectedMemberID = (group.members.first { liveWindow(for: $0) != nil } ?? group.members.first)?.id
+        }
+        guard persist(group) else { return }
+        if wasSelected, let selected = group.selectedMemberID,
+           group.members.contains(where: { $0.id == selected && liveWindow(for: $0) != nil }) {
+            select(groupID: groupID, memberID: selected)
+        } else {
+            show(group)
+        }
     }
 }

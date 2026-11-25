@@ -16,6 +16,22 @@ struct TabGroupsApp: App {
         }
         .menuBarExtraStyle(.menu)
 
+        Settings {
+            Form {
+                Section("Mission Control") {
+                    Toggle("Show the tab switcher", isOn: $coordinator.showTabSwitcher)
+                    Toggle("Show only the selected window in each group", isOn: Binding(
+                        get: { !coordinator.showAllWindowsInMissionControl },
+                        set: { coordinator.showAllWindowsInMissionControl = !$0 }
+                    ))
+                }
+            }
+            .formStyle(.grouped)
+            .toggleStyle(.checkbox)
+            .frame(width: 450)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+
         Window("Tab Groups", id: "groups") {
             GroupsWindowView(coordinator: coordinator, store: coordinator.store)
         }

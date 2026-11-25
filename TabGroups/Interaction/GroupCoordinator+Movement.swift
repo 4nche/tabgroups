@@ -64,6 +64,7 @@ extension GroupCoordinator {
         // Re-read the group: a tab may have been removed while the drag was in flight.
         guard let dragged, let current = store.groups.first(where: { $0.id == groupID }) else { return }
         commit(current, container: dragged.bounds)
+        concealUnselected(in: current)
     }
 
     // MARK: - Dragging a tab out
@@ -162,11 +163,14 @@ extension GroupCoordinator {
                 guard let focused, let live = liveWindow(for: member) else { return false }
                 return live.window.isSameWindow(as: focused)
             }
-            guard let front else { continue }
+            // A tab put away by minimising stays put away: an app coming forward on its own (for
+            // example after another app quits) must not swap the group to a window nobody can see.
+            guard let front, let frontWindow = liveWindow(for: front)?.window, !frontWindow.isMinimized else { continue }
             var updated = group
             updated.selectedMemberID = front.id
             if updated != group { persist(updated) }
             show(updated)
+            concealUnselected(in: updated)
         }
     }
 }
