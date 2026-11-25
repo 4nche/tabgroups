@@ -59,7 +59,7 @@ final class WindowCatalog {
     func describe(_ window: AXWindow) -> DiscoveredWindow? {
         guard let app = NSRunningApplication(processIdentifier: window.processID),
               let bundleID = app.bundleIdentifier, bundleID != Bundle.main.bundleIdentifier,
-              let bounds = window.bounds() else { return nil }
+              let bounds = window.bounds(), !window.isFinderDesktop else { return nil }
         let title = window.readString(kAXTitleAttribute as CFString)
         let identifier = window.readString(kAXIdentifierAttribute as CFString)
         let reference = WindowReference(bundleIdentifier: bundleID, processID: app.processIdentifier,
@@ -80,7 +80,8 @@ final class WindowCatalog {
 
         return elements.enumerated().compactMap { index, element in
             let axWindow = AXWindow(element: element, processID: app.processIdentifier)
-            guard let bounds = axWindow.bounds(), bounds.width > 80, bounds.height > 60 else { return nil }
+            guard let bounds = axWindow.bounds(), bounds.width > 80, bounds.height > 60,
+                  !axWindow.isFinderDesktop else { return nil }
             let title = axWindow.readString(kAXTitleAttribute as CFString)
             let identifier = axWindow.readString(kAXIdentifierAttribute as CFString)
             let reference = WindowReference(

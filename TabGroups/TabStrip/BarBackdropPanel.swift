@@ -16,7 +16,8 @@ final class BarBackdropPanel: NSPanel {
         hasShadow = false
         ignoresMouseEvents = true
         hidesOnDeactivate = false
-        collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
+        // Transient keeps the bar out of Mission Control, where it would show as a loose strip.
+        collectionBehavior = [.transient, .fullScreenAuxiliary, .ignoresCycle]
         contentView = NSHostingView(rootView: BarSurface(cornerRadius: Self.cornerRadius))
     }
 

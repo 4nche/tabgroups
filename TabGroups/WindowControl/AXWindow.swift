@@ -132,3 +132,41 @@ extension AXWindow {
             .min { $0.1 < $1.1 }?.0
     }
 }
+
+extension AXWindow {
+    /// Finder lists the desktop as a window: untitled and covering a whole screen. It is never a tab.
+    var isFinderDesktop: Bool {
+        guard NSRunningApplication(processIdentifier: processID)?.bundleIdentifier == "com.apple.finder",
+              (readString(kAXTitleAttribute as CFString) ?? "").isEmpty,
+              let bounds = bounds() else { return false }
+        let rect = CGRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height)
+        return NSScreen.screens.contains { screen in
+            rect.width >= screen.frame.width - 1 && rect.height >= screen.frame.height - 1
+        }
+    }
+
+    var isMinimized: Bool {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXMinimizedAttribute as CFString, &value) == .success else { return false }
+        return (value as? Bool) ?? false
+    }
+
+    func setMinimized(_ minimized: Bool) {
+        _ = AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString,
+                                         minimized ? kCFBooleanTrue : kCFBooleanFalse)
+    }
+
+    /// Every window the process lists right now, read fresh.
+    static func windows(ofProcess processID: pid_t) -> [AXWindow] {
+        var value: CFTypeRef?
+        let app = AXUIElementCreateApplication(processID)
+        AXUIElementSetMessagingTimeout(app, LiveWindowRegistry.messagingTimeout)
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
+              let elements = value as? [AXUIElement] else { return [] }
+        return elements.map { element in
+            let window = AXWindow(element: element, processID: processID)
+            window.setMessagingTimeout(LiveWindowRegistry.messagingTimeout)
+            return window
+        }
+    }
+}

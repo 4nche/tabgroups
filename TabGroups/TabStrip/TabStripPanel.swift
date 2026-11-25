@@ -45,7 +45,8 @@ final class TabStripPanel: NSPanel {
         hasShadow = false
         hidesOnDeactivate = false
         isMovable = false
-        collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
+        // Transient keeps the bar out of Mission Control, where it would show as a loose strip.
+        collectionBehavior = [.transient, .fullScreenAuxiliary, .ignoresCycle]
         contentView = host
     }
 

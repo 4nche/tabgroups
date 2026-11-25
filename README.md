@@ -10,6 +10,8 @@ Tab Groups is a native macOS menu bar utility that turns windows from different 
 - **Group by dragging.** Hold Shift, drag a window onto another one, and let go. The target gets a blue outline while you drag.
 - **The group moves as one.** Drag the bar, drag any window in the group, or let a window manager such as Rectangle Pro reposition one. Everything in the group follows.
 - **Pull a tab out.** Drag a tab away from the bar and its window leaves the group and follows the pointer.
+- **One window in Mission Control.** Only the selected tab stays on screen. The others are hidden with their app, or minimised when that app has other windows open, so Mission Control, App Exposé and Show Desktop see one window per group.
+- **Tabs in Mission Control.** While Mission Control or App Exposé is open, the group's tabs float above its window, with the stacked windows peeking out behind it. Click a tab there to go straight to it.
 - **Groups survive restarts.** On launch or wake, Tab Groups reconnects each group to the windows that are still open.
 
 ## Requirements
