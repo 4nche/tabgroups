@@ -42,6 +42,7 @@ final class GroupCoordinator: ObservableObject {
     private var windowScanCompletions: [([DiscoveredWindow]) -> Void] = []
     private var geometryObservers: [UUID: WindowGeometryObserverRegistration] = [:]
     private var pendingBoundsSyncs: [UUID: DispatchWorkItem] = [:]
+    private var activeGroupMoves: [UUID: TabGroup] = [:]
     private var started = false
 
     init(store: GroupStore = GroupStore(), catalog: WindowCatalog = WindowCatalog()) {
@@ -295,8 +296,37 @@ final class GroupCoordinator: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)
     }
 
+    private func moveGroup(groupID: UUID, by delta: CGSize) {
+        guard delta.width != 0 || delta.height != 0,
+              var group = activeGroupMoves[groupID] ?? store.groups.first(where: { $0.id == groupID }) else { return }
+        group.bounds.x += Double(delta.width)
+        group.bounds.y += Double(delta.height)
+
+        var constrainedApps: [String] = []
+        for member in group.members {
+            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows),
+                  let actual = live.window.apply(group.bounds) else { continue }
+            let difference = abs(actual.x - group.bounds.x) + abs(actual.y - group.bounds.y)
+                + abs(actual.width - group.bounds.width) + abs(actual.height - group.bounds.height)
+            if difference > 4 { constrainedApps.append(live.appName) }
+            updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
+        }
+
+        activeGroupMoves[groupID] = group
+        strip.translate(groupID: groupID, by: delta)
+        if !constrainedApps.isEmpty {
+            statusMessage = "Some apps limited their window movement: \(Array(Set(constrainedApps)).joined(separator: ", "))."
+        }
+    }
+
+    private func finishGroupMove(groupID: UUID) {
+        guard let group = activeGroupMoves.removeValue(forKey: groupID) else { return }
+        do { try store.upsert(group) }
+        catch { statusMessage = error.localizedDescription }
+    }
+
     private func synchronizeGroupBounds(groupID: UUID, sourceMemberID: UUID) {
-        guard var group = store.groups.first(where: { $0.id == groupID }),
+        guard var group = activeGroupMoves[groupID] ?? store.groups.first(where: { $0.id == groupID }),
               let source = group.members.first(where: { $0.id == sourceMemberID }),
               case .matched(let liveSource) = WindowReferenceMatcher.match(source, among: availableWindows),
               let bounds = liveSource.window.bounds() else { return }
@@ -304,22 +334,14 @@ final class GroupCoordinator: ObservableObject {
             + abs(bounds.width - group.bounds.width) + abs(bounds.height - group.bounds.height)
         guard change > 2 else { return }
 
-        group.bounds = bounds
-        group.selectedMemberID = sourceMemberID
-        updateReference(sourceMemberID, in: &group) { $0.lastKnownBounds = bounds }
-        var constrained = false
-        for member in group.members where member.id != sourceMemberID {
-            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows),
-                  let actual = live.window.apply(bounds) else { continue }
-            let delta = abs(actual.x - bounds.x) + abs(actual.y - bounds.y)
-                + abs(actual.width - bounds.width) + abs(actual.height - bounds.height)
-            if delta > 4 { constrained = true }
-            updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
+        guard let actual = liveSource.window.apply(group.bounds) else { return }
+        updateReference(sourceMemberID, in: &group) { $0.lastKnownBounds = actual }
+        if activeGroupMoves[groupID] != nil {
+            activeGroupMoves[groupID] = group
+            return
         }
         do {
             try store.upsert(group)
-            if constrained { statusMessage = "An app constrained its window size. The group now uses the accepted size." }
-            show(group)
         } catch { statusMessage = error.localizedDescription }
     }
 
@@ -376,7 +398,9 @@ final class GroupCoordinator: ObservableObject {
         })
         strip.show(group, titles: labels,
                    select: { [weak self] id in self?.select(groupID: group.id, memberID: id) },
-                   remove: { [weak self] id in self?.removeMember(groupID: group.id, memberID: id) })
+                   remove: { [weak self] id in self?.removeMember(groupID: group.id, memberID: id) },
+                   move: { [weak self] delta in self?.moveGroup(groupID: group.id, by: delta) },
+                   moveEnded: { [weak self] in self?.finishGroupMove(groupID: group.id) })
     }
 
     private func updateReference(_ id: UUID, in group: inout TabGroup, update: (inout WindowReference) -> Void) {
