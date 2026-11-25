@@ -5,9 +5,10 @@ Tab Groups is a native macOS menu bar utility for grouping windows from differen
 ## Use
 
 1. Open Tab Groups and enable Accessibility access for it in System Settings.
-2. Hold Shift and drag one app window onto another to create or extend a group.
-3. Select a tab in the floating strip to raise that window at the group’s shared size and position.
-4. Resize the active window to update the group bounds. Remove a tab with its close button or by dragging it away from the strip.
+2. Enter Tab Group Mode by pressing Shift, ~, Shift, ~, Shift, ~ within 3 seconds.
+3. Drag one app window onto another to create or extend a group. Press Escape to exit Tab Group Mode.
+4. Select a tab in the floating strip to raise that window at the group’s shared size and position.
+5. Resize the active window to update the group bounds. Remove a tab with its close button or by dragging it away from the strip.
 
 Groups are saved in `~/Library/Application Support/TabGroups/groups.json`. On launch or wake, Tab Groups reconnects to matching windows that are already open. It does not launch apps or reopen documents. If a saved window cannot be matched uniquely, assign it from the Groups window.
 
