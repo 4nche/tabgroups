@@ -5,9 +5,34 @@ struct TabStripView: View {
     let windowTitles: [UUID: (app: String, title: String)]
     let onSelect: (UUID) -> Void
     let onRemove: (UUID) -> Void
+    let onMove: (CGSize) -> Void
+    let onMoveEnded: () -> Void
+    @State private var lastDragTranslation = CGSize.zero
 
     var body: some View {
         HStack(spacing: 4) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 28)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 3)
+                        .onChanged { value in
+                            let delta = CGSize(
+                                width: value.translation.width - lastDragTranslation.width,
+                                height: value.translation.height - lastDragTranslation.height
+                            )
+                            lastDragTranslation = value.translation
+                            onMove(delta)
+                        }
+                        .onEnded { _ in
+                            lastDragTranslation = .zero
+                            onMoveEnded()
+                        }
+                )
+                .help("Drag to move the window group")
+
             ForEach(group.members) { member in
                 let labels = windowTitles[member.id]
                 HStack(spacing: 7) {
