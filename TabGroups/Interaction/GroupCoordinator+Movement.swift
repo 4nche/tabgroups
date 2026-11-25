@@ -9,6 +9,15 @@ struct GroupMovementState {
     /// Container a group will take once an outside move of a member settles.
     var pendingContainers: [UUID: WindowBounds] = [:]
     var settleWork: [UUID: DispatchWorkItem] = [:]
+    /// Windows being pulled out of a group by their tab, by former member id.
+    var tornTabs: [UUID: TornTab] = [:]
+}
+
+/// A window that has just left its group and is following the pointer.
+struct TornTab {
+    let window: AXWindow
+    /// Where the window sat when it was pulled out.
+    let origin: WindowBounds
 }
 
 extension GroupCoordinator {
@@ -57,6 +66,29 @@ extension GroupCoordinator {
         commit(current, container: dragged.bounds)
     }
 
+    // MARK: - Dragging a tab out
+
+    /// Dragging a tab takes that window out of the group; the window then follows the pointer.
+    func tabDragChanged(groupID: UUID, memberID: UUID, offset: CGSize) {
+        if movement.tornTabs[memberID] == nil {
+            guard let group = store.groups.first(where: { $0.id == groupID }),
+                  let member = group.members.first(where: { $0.id == memberID }),
+                  let live = liveWindow(for: member) else { return }
+            let origin = live.window.bounds() ?? GroupGeometry.contentBounds(of: group.bounds)
+            movement.tornTabs[memberID] = TornTab(window: live.window, origin: origin)
+            removeMember(groupID: groupID, memberID: memberID)
+            // Removing it brought the group's next tab forward; the window in hand goes back on top.
+            live.window.raise()
+            statusMessage = "Removed \(live.appName) from \(group.name)."
+        }
+        guard let torn = movement.tornTabs[memberID] else { return }
+        _ = torn.window.move(to: torn.origin.translated(dx: Double(offset.width), dy: Double(offset.height)))
+    }
+
+    func tabDragEnded(memberID: UUID) {
+        movement.tornTabs[memberID] = nil
+    }
+
     // MARK: - A member moved by something else
 
     /// A member window was moved or resized: by the mouse, by a window manager such as Rectangle Pro,
@@ -85,9 +117,15 @@ extension GroupCoordinator {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.settleDelay, execute: work)
     }
 
-    private func settle(groupID: UUID) {
+    /// Applies a pending outside move right now instead of waiting for it to settle.
+    func flushPendingMove(groupID: UUID) {
+        movement.settleWork.removeValue(forKey: groupID)?.cancel()
+        settle(groupID: groupID, evenWhileMouseIsDown: true)
+    }
+
+    private func settle(groupID: UUID, evenWhileMouseIsDown: Bool = false) {
         // Never reposition a window the user is still holding.
-        guard NSEvent.pressedMouseButtons == 0 else {
+        guard evenWhileMouseIsDown || NSEvent.pressedMouseButtons == 0 else {
             scheduleSettle(groupID: groupID)
             return
         }

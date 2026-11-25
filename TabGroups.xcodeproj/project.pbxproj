@@ -34,8 +34,16 @@
 		A10000000000000000000025 /* GroupCoordinator+Movement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* GroupCoordinator+Movement.swift */; };
 		A10000000000000000000026 /* FilledButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* FilledButtonStyle.swift */; };
 		B10000000000000000000006 /* LiveWindowRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* LiveWindowRegistryTests.swift */; };
-		A10000000000000000000027 /* GlassPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* GlassPreference.swift */; };
-		B10000000000000000000007 /* GlassPreferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* GlassPreferenceTests.swift */; };
+		A10000000000000000000027 /* DropPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* DropPlan.swift */; };
+		A10000000000000000000028 /* WindowHitTester.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* WindowHitTester.swift */; };
+		B10000000000000000000007 /* DropPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* DropPlanTests.swift */; };
+		B10000000000000000000008 /* WindowHitTesterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008 /* WindowHitTesterTests.swift */; };
+		A10000000000000000000029 /* ShiftDragMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000029 /* ShiftDragMonitor.swift */; };
+		A10000000000000000000030 /* GroupCoordinator+DropGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000030 /* GroupCoordinator+DropGrouping.swift */; };
+		A10000000000000000000031 /* TargetHighlightPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000031 /* TargetHighlightPanel.swift */; };
+		A10000000000000000000032 /* BarBackdropPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* BarBackdropPanel.swift */; };
+		A10000000000000000000033 /* TabHitTester.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* TabHitTester.swift */; };
+		B10000000000000000000009 /* TabHitTesterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000009 /* TabHitTesterTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -77,8 +85,16 @@
 		A20000000000000000000025 /* GroupCoordinator+Movement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GroupCoordinator+Movement.swift"; sourceTree = "<group>"; };
 		A20000000000000000000026 /* FilledButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilledButtonStyle.swift; sourceTree = "<group>"; };
 		B20000000000000000000006 /* LiveWindowRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveWindowRegistryTests.swift; sourceTree = "<group>"; };
-		A20000000000000000000027 /* GlassPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassPreference.swift; sourceTree = "<group>"; };
-		B20000000000000000000007 /* GlassPreferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassPreferenceTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000027 /* DropPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropPlan.swift; sourceTree = "<group>"; };
+		A20000000000000000000028 /* WindowHitTester.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowHitTester.swift; sourceTree = "<group>"; };
+		B20000000000000000000007 /* DropPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropPlanTests.swift; sourceTree = "<group>"; };
+		B20000000000000000000008 /* WindowHitTesterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowHitTesterTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000029 /* ShiftDragMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftDragMonitor.swift; sourceTree = "<group>"; };
+		A20000000000000000000030 /* GroupCoordinator+DropGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GroupCoordinator+DropGrouping.swift"; sourceTree = "<group>"; };
+		A20000000000000000000031 /* TargetHighlightPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetHighlightPanel.swift; sourceTree = "<group>"; };
+		A20000000000000000000032 /* BarBackdropPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarBackdropPanel.swift; sourceTree = "<group>"; };
+		A20000000000000000000033 /* TabHitTester.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabHitTester.swift; sourceTree = "<group>"; };
+		B20000000000000000000009 /* TabHitTesterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabHitTesterTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -162,7 +178,8 @@
 		A30000000000000000000007 /* TabStrip */ = {
 			isa = PBXGroup;
 			children = (
-				A20000000000000000000027 /* GlassPreference.swift */,
+				A20000000000000000000032 /* BarBackdropPanel.swift */,
+				A20000000000000000000031 /* TargetHighlightPanel.swift */,
 				A20000000000000000000022 /* ScreenGeometry.swift */,
 				A20000000000000000000010 /* TabStripView.swift */,
 				A20000000000000000000011 /* TabStripPanel.swift */,
@@ -186,6 +203,9 @@
 		A30000000000000000000009 /* Interaction */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000030 /* GroupCoordinator+DropGrouping.swift */,
+				A20000000000000000000029 /* ShiftDragMonitor.swift */,
+				A20000000000000000000027 /* DropPlan.swift */,
 				A20000000000000000000025 /* GroupCoordinator+Movement.swift */,
 				A20000000000000000000024 /* GeometryObserverCenter.swift */,
 				A20000000000000000000023 /* LiveWindowRegistry.swift */,
@@ -215,7 +235,9 @@
 		B30000000000000000000001 /* TabGroupsTests */ = {
 			isa = PBXGroup;
 			children = (
-				B20000000000000000000007 /* GlassPreferenceTests.swift */,
+				B20000000000000000000009 /* TabHitTesterTests.swift */,
+				B20000000000000000000008 /* WindowHitTesterTests.swift */,
+				B20000000000000000000007 /* DropPlanTests.swift */,
 				B20000000000000000000006 /* LiveWindowRegistryTests.swift */,
 				B20000000000000000000005 /* GroupGeometryTests.swift */,
 				B20000000000000000000001 /* GroupStoreTests.swift */,
@@ -227,6 +249,8 @@
 		A30000000000000000000012 /* Geometry */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000033 /* TabHitTester.swift */,
+				A20000000000000000000028 /* WindowHitTester.swift */,
 				A20000000000000000000021 /* GroupGeometry.swift */,
 			);
 			path = Geometry;
@@ -329,7 +353,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10000000000000000000027 /* GlassPreference.swift in Sources */,
+				A10000000000000000000033 /* TabHitTester.swift in Sources */,
+				A10000000000000000000032 /* BarBackdropPanel.swift in Sources */,
+				A10000000000000000000031 /* TargetHighlightPanel.swift in Sources */,
+				A10000000000000000000030 /* GroupCoordinator+DropGrouping.swift in Sources */,
+				A10000000000000000000029 /* ShiftDragMonitor.swift in Sources */,
+				A10000000000000000000028 /* WindowHitTester.swift in Sources */,
+				A10000000000000000000027 /* DropPlan.swift in Sources */,
 				A10000000000000000000026 /* FilledButtonStyle.swift in Sources */,
 				A10000000000000000000025 /* GroupCoordinator+Movement.swift in Sources */,
 				A10000000000000000000024 /* GeometryObserverCenter.swift in Sources */,
@@ -359,7 +389,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B10000000000000000000007 /* GlassPreferenceTests.swift in Sources */,
+				B10000000000000000000009 /* TabHitTesterTests.swift in Sources */,
+				B10000000000000000000008 /* WindowHitTesterTests.swift in Sources */,
+				B10000000000000000000007 /* DropPlanTests.swift in Sources */,
 				B10000000000000000000006 /* LiveWindowRegistryTests.swift in Sources */,
 				B10000000000000000000005 /* GroupGeometryTests.swift in Sources */,
 				B10000000000000000000001 /* GroupStoreTests.swift in Sources */,

@@ -24,6 +24,25 @@ enum ScreenGeometry {
         return mainDisplayHeight - Double(screen.visibleFrame.maxY)
     }
 
+    /// A point from `NSEvent.mouseLocation` in Accessibility coordinates.
+    static func accessibilityPoint(fromAppKit point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x, y: CGFloat(mainDisplayHeight) - point.y)
+    }
+
+    /// Every on-screen window, front to back, as the window server reports it.
+    static func onScreenWindows() -> [ScreenWindow] {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let raw = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }
+        return raw.compactMap { info in
+            guard let number = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
+                  let processID = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                  let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
+                  let rect = (info[kCGWindowBounds as String] as? NSDictionary)
+                    .flatMap({ CGRect(dictionaryRepresentation: $0) }) else { return nil }
+            return ScreenWindow(number: number, processID: processID, layer: layer, bounds: WindowBounds(rect))
+        }
+    }
+
     static func displayIdentifier(for bounds: WindowBounds) -> String? {
         let number = screen(for: bounds)?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
         return number?.stringValue

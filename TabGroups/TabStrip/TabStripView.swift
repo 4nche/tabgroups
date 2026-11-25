@@ -12,12 +12,15 @@ struct TabItem: Identifiable, Equatable {
 struct TabStripView: View {
     let tabs: [TabItem]
     let selectedID: UUID?
-    let glass: GlassPreference.Variant
     let onSelect: (UUID) -> Void
     let onRemove: (UUID) -> Void
+    /// Reports each tab's rectangle in the bar's own space, so the panel knows what a drag starts on.
+    let onTabFrames: ([UUID: CGRect]) -> Void
+
+    static let coordinateSpace = "tab-bar"
 
     private enum Metrics {
-        static let cornerRadius: CGFloat = 16
+        static let hitAreaOpacity: Double = 0.02
         static let tabSpacing: CGFloat = 2
         static let edgePadding: CGFloat = 4
     }
@@ -27,40 +30,29 @@ struct TabStripView: View {
             ForEach(tabs) { tab in
                 TabView(tab: tab, isSelected: tab.id == selectedID,
                         onSelect: { onSelect(tab.id) }, onRemove: { onRemove(tab.id) })
+                    .background(GeometryReader { proxy in
+                        Color.clear.preference(key: TabFramesKey.self,
+                                               value: [tab.id: proxy.frame(in: .named(Self.coordinateSpace))])
+                    })
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Metrics.edgePadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: CGFloat(GroupGeometry.barHeight))
-        // The surface fills the whole panel, which reaches down behind the member window; the tabs
-        // stay in the top strip that the window does not cover.
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(BarSurface(cornerRadius: Metrics.cornerRadius, glass: glass))
+        // The glass is a separate panel behind this one. A faint fill keeps the whole bar clickable:
+        // the window server passes clicks straight through fully transparent pixels.
+        .background(Color.white.opacity(Metrics.hitAreaOpacity))
+        .coordinateSpace(name: Self.coordinateSpace)
+        .onPreferenceChange(TabFramesKey.self, perform: onTabFrames)
     }
 }
 
-/// The bar's surface. With the system's glass tint off it is see-through: macOS only gives a
-/// window frosted glass over what lies behind it (other apps, the wallpaper), never the unblurred
-/// kind, so that look is drawn here as a faint sheen. With a tint set it is the system's own glass.
-private struct BarSurface: View {
-    let cornerRadius: CGFloat
-    let glass: GlassPreference.Variant
+private struct TabFramesKey: PreferenceKey {
+    static let defaultValue: [UUID: CGRect] = [:]
 
-    private enum Sheen {
-        static let top = Color.white.opacity(0.26)
-        static let bottom = Color.white.opacity(0.10)
-    }
-
-    var body: some View {
-        let shape = UnevenRoundedRectangle(topLeadingRadius: cornerRadius, topTrailingRadius: cornerRadius)
-        if glass == .clear {
-            shape.fill(LinearGradient(colors: [Sheen.top, Sheen.bottom], startPoint: .top, endPoint: .bottom))
-        } else if #available(macOS 26.0, *) {
-            Color.clear.glassEffect(.regular, in: shape)
-        } else {
-            shape.fill(.regularMaterial)
-        }
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value = value.merging(nextValue()) { _, new in new }
     }
 }
 

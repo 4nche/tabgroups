@@ -55,6 +55,20 @@ final class WindowCatalog {
         WindowReferenceMatcher.match(reference, among: scan())
     }
 
+    /// Describes a window we hold a live handle to, without scanning every app.
+    func describe(_ window: AXWindow) -> DiscoveredWindow? {
+        guard let app = NSRunningApplication(processIdentifier: window.processID),
+              let bundleID = app.bundleIdentifier, bundleID != Bundle.main.bundleIdentifier,
+              let bounds = window.bounds() else { return nil }
+        let title = window.readString(kAXTitleAttribute as CFString)
+        let identifier = window.readString(kAXIdentifierAttribute as CFString)
+        let reference = WindowReference(bundleIdentifier: bundleID, processID: app.processIdentifier,
+                                        accessibilityIdentifier: identifier, title: title, lastKnownBounds: bounds)
+        let key = [bundleID, String(app.processIdentifier), identifier ?? "", title ?? "",
+                   "live-\(CFHash(window.element))"].joined(separator: "|")
+        return DiscoveredWindow(id: key, appName: app.localizedName ?? bundleID, reference: reference, window: window)
+    }
+
     private func windows(for app: NSRunningApplication) -> [DiscoveredWindow] {
         guard app.activationPolicy != .prohibited,
               let bundleID = app.bundleIdentifier,

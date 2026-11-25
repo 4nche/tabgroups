@@ -76,6 +76,12 @@ extension AXWindow {
         }
     }
 
+    /// True only when the system says this window no longer exists; a slow or busy app is not "gone".
+    var isInvalid: Bool {
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value) == .invalidUIElement
+    }
+
     /// The window of this window's app that currently has keyboard focus.
     func focusedWindowOfOwningApp() -> AXUIElement? {
         let app = AXUIElementCreateApplication(processID)
@@ -83,5 +89,46 @@ extension AXWindow {
         guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &value) == .success,
               let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         return (value as! AXUIElement)
+    }
+}
+
+extension AXWindow {
+    /// The window under a point (Accessibility coordinates), asked of the system at this moment.
+    static func window(at point: CGPoint) -> AXWindow? {
+        var hit: AXUIElement?
+        let system = AXUIElementCreateSystemWide()
+        // A timeout on the system-wide element is global to this process, so it is put back at once:
+        // left in place it would also cut off the background window scan for slower apps.
+        AXUIElementSetMessagingTimeout(system, LiveWindowRegistry.messagingTimeout)
+        let result = AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &hit)
+        AXUIElementSetMessagingTimeout(system, 0)
+        guard result == .success,
+              let hit else { return nil }
+        var processID: pid_t = 0
+        guard AXUIElementGetPid(hit, &processID) == .success else { return nil }
+        let element = AXWindow(element: hit, processID: processID)
+        element.setMessagingTimeout(LiveWindowRegistry.messagingTimeout)
+        if element.readString(kAXRoleAttribute as CFString) == (kAXWindowRole as String) { return element }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(hit, kAXWindowAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return AXWindow(element: value as! AXUIElement, processID: processID)
+    }
+
+    /// The window of a process whose rectangle is closest to `bounds`, read fresh.
+    static func window(ofProcess processID: pid_t, closestTo bounds: WindowBounds) -> AXWindow? {
+        var value: CFTypeRef?
+        let app = AXUIElementCreateApplication(processID)
+        AXUIElementSetMessagingTimeout(app, LiveWindowRegistry.messagingTimeout)
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
+              let elements = value as? [AXUIElement] else { return nil }
+        return elements
+            .map { element -> AXWindow in
+                let window = AXWindow(element: element, processID: processID)
+                window.setMessagingTimeout(LiveWindowRegistry.messagingTimeout)
+                return window
+            }
+            .compactMap { window in window.bounds().map { (window, $0.distance(to: bounds)) } }
+            .min { $0.1 < $1.1 }?.0
     }
 }

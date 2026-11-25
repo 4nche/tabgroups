@@ -17,6 +17,7 @@ final class GroupCoordinator: ObservableObject {
     var movement = GroupMovementState()
 
     private let windowScanQueue = DispatchQueue(label: "com.4nche.TabGroups.window-scan", qos: .userInitiated)
+    private var dragGrouping: ShiftDragMonitor?
     private var restorer: WindowRestorer?
     private var windowRefreshTimer: Timer?
     private var activationToken: NSObjectProtocol?
@@ -54,6 +55,8 @@ final class GroupCoordinator: ObservableObject {
         } else {
             statusMessage = "Grant Accessibility permission to group and control app windows."
         }
+        dragGrouping = ShiftDragMonitor(coordinator: self)
+        dragGrouping?.start()
         restorer = WindowRestorer { [weak self] in self?.restoreAvailableGroups() }
         restorer?.start()
         windowRefreshTimer = Timer.scheduledTimer(withTimeInterval: Self.windowRefreshInterval,
@@ -112,23 +115,29 @@ final class GroupCoordinator: ObservableObject {
             guard seen.insert(id).inserted else { return nil }
             return availableWindows.first { $0.id == id }
         }
-        guard let first = selected.first,
-              let made = WindowGroupFactory.make(from: selected,
+        formGroup(from: selected, selecting: selected.first)
+    }
+
+    /// Groups the given windows where the first one sits. Used by the picker and by Shift-drag.
+    func formGroup(from windows: [DiscoveredWindow], selecting selected: DiscoveredWindow?) {
+        guard let first = windows.first,
+              let made = WindowGroupFactory.make(from: windows,
                                                  displayIdentifier: ScreenGeometry.displayIdentifier(for: first.bounds))
         else {
             statusMessage = "Select at least two available windows to create a group."
             return
         }
-        selected.forEach { detach($0, fromOtherGroupsExcept: made.id) }
-        selected.forEach { registry.remember($0, memberID: $0.reference.id) }
+        windows.forEach { detach($0, fromOtherGroupsExcept: made.id) }
+        windows.forEach { registry.remember($0, memberID: $0.reference.id) }
 
         // The first window keeps its place; the bar goes above it unless it touches the top edge.
         let current = first.window.bounds() ?? first.bounds
         var group = made
         group.bounds = GroupGeometry.container(adopting: current,
                                                visibleTop: ScreenGeometry.visibleTop(for: current))
+        group.selectedMemberID = (selected ?? first).reference.id
         let placed = placeAll(in: group)
-        first.window.raise()
+        (selected ?? first).window.raise()
         guard persist(placed.group) else { return }
         show(placed.group)
         statusMessage = placed.constrainedApps.isEmpty
@@ -296,6 +305,10 @@ final class GroupCoordinator: ObservableObject {
                    remove: { [weak self] id in self?.removeMember(groupID: group.id, memberID: id) },
                    dragChanged: { [weak self] offset in self?.barDragChanged(groupID: group.id, offset: offset) },
                    dragEnded: { [weak self] in self?.barDragEnded(groupID: group.id) },
+                   tabDragChanged: { [weak self] id, offset in
+                       self?.tabDragChanged(groupID: group.id, memberID: id, offset: offset)
+                   },
+                   tabDragEnded: { [weak self] id in self?.tabDragEnded(memberID: id) },
                    memberWindowNumbers: memberWindowNumbers(for: group))
     }
 

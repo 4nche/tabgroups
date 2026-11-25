@@ -22,10 +22,14 @@ final class LiveWindowRegistry {
         handles[memberID] = window
     }
 
-    /// Drops handles whose window no longer appears in a fresh scan (closed, or its app quit).
-    func prune(keeping scanned: [DiscoveredWindow]) {
+    /// Drops handles whose window is gone. An app that lists other windows but not this one has
+    /// closed it. An app missing from the scan entirely may only have been too busy to answer, so its
+    /// windows are kept unless the system confirms they no longer exist.
+    func prune(keeping scanned: [DiscoveredWindow], isGone: (AXWindow) -> Bool = { $0.isInvalid }) {
         let gone = handles.filter { _, handle in
-            !scanned.contains { $0.window.isSameWindow(as: handle.window.element) }
+            let sameApp = scanned.filter { $0.window.processID == handle.window.processID }
+            if sameApp.isEmpty { return isGone(handle.window) }
+            return !sameApp.contains { $0.window.isSameWindow(as: handle.window.element) }
         }
         gone.keys.forEach(forget(memberID:))
     }

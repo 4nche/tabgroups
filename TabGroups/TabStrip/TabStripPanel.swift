@@ -6,18 +6,30 @@ private final class FirstMouseHostingView<Content: View>: NSHostingView<Content>
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-/// The bar window of one group. Dragging it anywhere reports the offset since mouse-down in
+/// The bar window of one group. Dragging the bar moves the group; dragging a tab pulls that window
+/// out of the group. Either way the drag reports the offset since mouse-down in
 /// screen coordinates, so moving the panel during the drag cannot distort the measurement.
 final class TabStripPanel: NSPanel {
     /// Total offset since mouse-down, Accessibility axes (positive height = down).
     var onDragChanged: ((CGSize) -> Void)?
     var onDragEnded: (() -> Void)?
+    /// A tab is being dragged out of the bar: its member id and the same kind of offset.
+    var onTabDragChanged: ((UUID, CGSize) -> Void)?
+    var onTabDragEnded: ((UUID) -> Void)?
+    /// Any click or drag on the bar has finished; the window server may have raised this panel.
+    var onInteractionEnded: (() -> Void)?
 
     private static let dragThreshold: CGFloat = 3
-    private let host = FirstMouseHostingView(rootView: TabStripView(tabs: [], selectedID: nil, glass: .regular,
-                                                            onSelect: { _ in }, onRemove: { _ in }))
+    /// Higher than the bar's, so a slightly shaky click on a tab does not detach it.
+    private static let tabDragThreshold: CGFloat = 10
+    private let host = FirstMouseHostingView(rootView: TabStripView(tabs: [], selectedID: nil,
+                                                            onSelect: { _ in }, onRemove: { _ in },
+                                                            onTabFrames: { _ in }))
     private var mouseDownLocation: NSPoint?
     private var isDragging = false
+    private var tabFrames: [UUID: CGRect] = [:]
+    /// The tab the current press started on; nil when it started on the bar itself.
+    private var pressedTabID: UUID?
 
     init() {
         super.init(
@@ -39,47 +51,66 @@ final class TabStripPanel: NSPanel {
 
     func update(tabs: [TabItem], selectedID: UUID?,
                 onSelect: @escaping (UUID) -> Void, onRemove: @escaping (UUID) -> Void) {
-        host.rootView = TabStripView(tabs: tabs, selectedID: selectedID, glass: GlassPreference.current,
-                                     onSelect: onSelect, onRemove: onRemove)
+        host.rootView = TabStripView(tabs: tabs, selectedID: selectedID,
+                                     onSelect: onSelect, onRemove: onRemove,
+                                     onTabFrames: { [weak self] frames in self?.tabFrames = frames })
     }
 
     func place(at container: WindowBounds) {
-        setFrame(ScreenGeometry.appKitRect(for: GroupGeometry.barBackdropBounds(of: container)), display: true)
+        setFrame(ScreenGeometry.appKitRect(for: GroupGeometry.barBounds(of: container)), display: true)
     }
 
-    /// Directly beneath the group's front window: the window covers the part of the panel that
-    /// reaches behind it, and only its rounded corners let the bar's surface show through.
-    func orderBelow(windowNumber: Int) {
-        order(.below, relativeTo: windowNumber)
+    func orderAbove(windowNumber: Int) {
+        order(.above, relativeTo: windowNumber)
     }
 
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
             // A mouse-up lost to another window must not leave the group stuck in a drag.
-            if isDragging { onDragEnded?() }
+            if isDragging { endDrag() }
             mouseDownLocation = NSEvent.mouseLocation
             isDragging = false
+            // The last tab cannot be pulled out of its own group; dragging it moves the group.
+            pressedTabID = tabFrames.count > 1
+                ? TabHitTester.tab(atWindowPoint: event.locationInWindow, panelHeight: frame.height, frames: tabFrames)
+                : nil
             super.sendEvent(event)
         case .leftMouseDragged:
             guard let start = mouseDownLocation else { return super.sendEvent(event) }
             let now = NSEvent.mouseLocation
-            if !isDragging, hypot(now.x - start.x, now.y - start.y) > Self.dragThreshold {
+            let threshold = pressedTabID == nil ? Self.dragThreshold : Self.tabDragThreshold
+            if !isDragging, hypot(now.x - start.x, now.y - start.y) > threshold {
                 isDragging = true
             }
             guard isDragging else { return super.sendEvent(event) }
-            onDragChanged?(CGSize(width: now.x - start.x, height: start.y - now.y))
+            let offset = CGSize(width: now.x - start.x, height: start.y - now.y)
+            if let pressedTabID {
+                onTabDragChanged?(pressedTabID, offset)
+            } else {
+                onDragChanged?(offset)
+            }
         case .leftMouseUp:
             let wasDragging = isDragging
             mouseDownLocation = nil
-            isDragging = false
             if wasDragging {
-                onDragEnded?()
+                endDrag()
             } else {
                 super.sendEvent(event)
             }
+            onInteractionEnded?()
         default:
             super.sendEvent(event)
         }
+    }
+
+    private func endDrag() {
+        isDragging = false
+        if let pressedTabID {
+            onTabDragEnded?(pressedTabID)
+        } else {
+            onDragEnded?()
+        }
+        pressedTabID = nil
     }
 }
