@@ -1,12 +1,32 @@
 import Foundation
 
 final class TabStripCoordinator {
-    private let panel = TabStripPanel()
+    private struct GroupPanels {
+        let tabs: TabStripPanel
+        let frame: GroupFramePanel
+    }
+
+    private var panels: [UUID: GroupPanels] = [:]
 
     func show(_ group: TabGroup, titles: [UUID: (app: String, title: String)],
               select: @escaping (UUID) -> Void, remove: @escaping (UUID) -> Void) {
-        panel.show(group: group, windowTitles: titles, onSelect: select, onRemove: remove)
+        let groupPanels = panels[group.id] ?? GroupPanels(tabs: TabStripPanel(), frame: GroupFramePanel())
+        panels[group.id] = groupPanels
+        groupPanels.frame.show(bounds: group.bounds)
+        groupPanels.tabs.show(group: group, windowTitles: titles, onSelect: select, onRemove: remove)
     }
 
-    func hide() { panel.orderOut(nil) }
+    func hide(groupID: UUID) {
+        guard let groupPanels = panels.removeValue(forKey: groupID) else { return }
+        groupPanels.tabs.orderOut(nil)
+        groupPanels.frame.orderOut(nil)
+    }
+
+    func hide() {
+        panels.values.forEach {
+            $0.tabs.orderOut(nil)
+            $0.frame.orderOut(nil)
+        }
+        panels.removeAll()
+    }
 }
