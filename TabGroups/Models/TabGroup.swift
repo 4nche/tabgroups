@@ -24,3 +24,16 @@ struct TabGroup: Codable, Identifiable, Equatable {
         self.selectedMemberID = selectedMemberID ?? members.first?.id
     }
 }
+
+enum WindowGroupFactory {
+    static func make(from windows: [DiscoveredWindow], displayIdentifier: String?) -> TabGroup? {
+        guard let first = windows.first, windows.count > 1 else { return nil }
+        return TabGroup(
+            name: "\(first.appName) Group",
+            displayIdentifier: displayIdentifier,
+            bounds: first.bounds,
+            members: windows.map(\.reference),
+            selectedMemberID: first.reference.id
+        )
+    }
+}
