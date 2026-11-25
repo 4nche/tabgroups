@@ -6,8 +6,9 @@ Build a small native macOS utility that groups windows from different apps into 
 
 ## User experience
 
-- Hold Shift and drag one app window onto another to create or extend a group.
-- Show a compact tab strip above the group’s shared window area.
+- Select accessible app windows in a group builder and click Group.
+- Use the first selected window’s existing position and size as the group’s shared bounds.
+- Show a visible frame around the shared window area and a compact tab strip above it.
 - Click a tab to raise that app window in the same screen position and size.
 - Resize the active app window to update the shared bounds used by the group.
 - Drag a tab away from the strip to remove that window from the group.
@@ -25,18 +26,18 @@ The utility needs macOS Accessibility permission to inspect, move, resize, and r
 
 ## Data flow
 
-1. The user starts a Shift-drag gesture over an app window and drops it onto another window.
-2. The utility resolves both windows through Accessibility, then creates or extends a group record.
-3. It positions the tab strip over the shared bounds and records each window’s app identity and matching hints.
+1. The user selects two or more windows in the group builder and clicks Group.
+2. The utility resolves the selected windows through Accessibility, then creates a group record using the first selected window’s bounds.
+3. It moves and resizes the selected windows to the shared bounds, then displays a frame and tab strip over that area.
 4. A tab click raises the selected window and applies the group’s shared position and size.
 5. A resize of the selected window updates the group bounds and is saved locally.
 6. On wake or utility launch, scan available windows, reconnect saved members, and restore the tab strip and bounds.
 
 ## Alternatives considered
 
-1. **Floating native tab strip with Accessibility window control (chosen):** supports arbitrary app windows and the requested shared-size tab behavior while keeping the utility small.
-2. **Menu bar-only controller:** simpler to keep out of the way, but it does not provide a visible tab strip attached to the group.
-3. **A host window that embeds apps:** would provide a literal container, but macOS does not let a general utility embed arbitrary third-party app windows. It would require every app to provide content for the host.
+1. **Selection-based group builder with a visible frame and tabs (chosen):** avoids pointer hit-testing and keeps app windows under Accessibility control.
+2. **Drag-to-group:** fewer setup steps, but it depends on identifying both windows under a moving pointer and has proven unreliable in practice.
+3. **A host window that embeds app content:** AppKit child windows attach app-managed NSWindow instances; the general utility instead draws a frame around third-party windows and controls them through Accessibility.
 
 ## Error handling
 
