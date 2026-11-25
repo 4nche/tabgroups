@@ -32,6 +32,10 @@ final class GroupFramePanel: NSPanel {
         setFrame(rect, display: true)
         orderFrontRegardless()
     }
+
+    func translate(by delta: CGSize) {
+        setFrameOrigin(NSPoint(x: frame.origin.x + delta.width, y: frame.origin.y - delta.height))
+    }
 }
 
 private enum WindowScreenGeometry {
@@ -67,9 +71,11 @@ final class TabStripPanel: NSPanel {
     }
 
     func show(group: TabGroup, windowTitles: [UUID: (app: String, title: String)],
-              onSelect: @escaping (UUID) -> Void, onRemove: @escaping (UUID) -> Void) {
+              onSelect: @escaping (UUID) -> Void, onRemove: @escaping (UUID) -> Void,
+              onMove: @escaping (CGSize) -> Void, onMoveEnded: @escaping () -> Void) {
         let view = TabStripView(group: group, windowTitles: windowTitles,
-                                onSelect: onSelect, onRemove: onRemove)
+                                onSelect: onSelect, onRemove: onRemove,
+                                onMove: onMove, onMoveEnded: onMoveEnded)
         let host = NSHostingView(rootView: view)
         contentView = host
         host.layoutSubtreeIfNeeded()
@@ -81,5 +87,9 @@ final class TabStripPanel: NSPanel {
         setFrame(NSRect(x: groupRect.minX, y: groupRect.maxY,
                         width: width, height: height), display: true)
         orderFrontRegardless()
+    }
+
+    func translate(by delta: CGSize) {
+        setFrameOrigin(NSPoint(x: frame.origin.x + delta.width, y: frame.origin.y - delta.height))
     }
 }
