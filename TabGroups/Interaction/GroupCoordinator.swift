@@ -9,7 +9,6 @@ final class GroupCoordinator: ObservableObject {
 
     private let windowController: WindowController
     private let strip = TabStripCoordinator()
-    private var dragMonitor: WindowDragMonitor?
     private var restorer: WindowRestorer?
     private var boundsTimer: Timer?
     private var started = false
@@ -37,12 +36,6 @@ final class GroupCoordinator: ObservableObject {
         started = true
         statusMessage = store.loadError?.localizedDescription
         refreshAvailableWindows()
-        let monitor = WindowDragMonitor(catalog: catalog) { [weak self] source, target in
-            guard let self else { return DragDropResult(message: "Tab Groups is unavailable", succeeded: false) }
-            return self.createOrExtendGroup(source: source, target: target)
-        }
-        dragMonitor = monitor
-        monitor.start()
         if AccessibilityPermission.isGranted {
             hadPermission = true
             restoreAvailableGroups()
@@ -61,13 +54,54 @@ final class GroupCoordinator: ObservableObject {
             statusMessage = "Accessibility permission is still off. Enable Tab Groups in System Settings, then return here."
             return
         }
-        dragMonitor?.start()
         statusMessage = nil
         restoreAvailableGroups()
     }
 
     func refreshAvailableWindows() {
         availableWindows = catalog.scan()
+    }
+
+    func createGroup(windowIDs: [String]) {
+        guard AccessibilityPermission.isGranted else {
+            statusMessage = "Enable Accessibility permission before grouping windows."
+            return
+        }
+        refreshAvailableWindows()
+        var seen = Set<String>()
+        let selected = windowIDs.compactMap { id -> DiscoveredWindow? in
+            guard seen.insert(id).inserted else { return nil }
+            return availableWindows.first { $0.id == id }
+        }
+        guard let first = selected.first, selected.count > 1,
+              var group = WindowGroupFactory.make(from: selected, displayIdentifier: displayIdentifier(for: first.bounds)) else {
+            statusMessage = "Select at least two available windows to create a group."
+            return
+        }
+
+        for window in selected { detach(window, fromOtherGroupsExcept: group.id) }
+        var constrainedApps: [String] = []
+        for window in selected {
+            guard let actual = window.window.apply(group.bounds) else {
+                constrainedApps.append(window.appName)
+                continue
+            }
+            let delta = abs(actual.x - group.bounds.x) + abs(actual.y - group.bounds.y)
+                + abs(actual.width - group.bounds.width) + abs(actual.height - group.bounds.height)
+            if delta > 4 { constrainedApps.append(window.appName) }
+        }
+        if let actual = first.window.bounds() { group.bounds = actual }
+        first.window.raise()
+
+        do {
+            try store.upsert(group)
+            show(group)
+            statusMessage = constrainedApps.isEmpty
+                ? "Created \(group.name) with \(group.members.count) windows."
+                : "Some apps limited their window size: \(Array(Set(constrainedApps)).joined(separator: ", "))."
+        } catch {
+            statusMessage = error.localizedDescription
+        }
     }
 
     func select(groupID: UUID, memberID: UUID) {
@@ -91,7 +125,7 @@ final class GroupCoordinator: ObservableObject {
         group.members.removeAll { $0.id == memberID }
         if group.members.isEmpty {
             do { try store.removeGroup(id: groupID) } catch { statusMessage = error.localizedDescription }
-            strip.hide()
+            strip.hide(groupID: groupID)
             return
         }
         if group.selectedMemberID == memberID { group.selectedMemberID = group.members.first?.id }
@@ -104,7 +138,7 @@ final class GroupCoordinator: ObservableObject {
 
     func deleteGroup(_ group: TabGroup) {
         do { try store.removeGroup(id: group.id) } catch { statusMessage = error.localizedDescription }
-        strip.hide()
+        strip.hide(groupID: group.id)
     }
 
     func reassign(memberID: UUID, to windowID: String) {
@@ -122,79 +156,6 @@ final class GroupCoordinator: ObservableObject {
         } catch { statusMessage = error.localizedDescription }
     }
 
-    private func createOrExtendGroup(source: DiscoveredWindow, target: DiscoveredWindow) -> DragDropResult {
-        guard AccessibilityPermission.isGranted else {
-            statusMessage = "Enable Accessibility permission before grouping windows."
-            return DragDropResult(message: statusMessage ?? "Accessibility permission is required", succeeded: false)
-        }
-        refreshAvailableWindows()
-        var targetGroup = store.groups.first { group in
-            group.members.contains { member in
-                if case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) {
-                    return live.id == target.id
-                }
-                return false
-            }
-        }
-        if let group = targetGroup,
-           group.members.contains(where: { member in
-               if case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) { return live.id == source.id }
-               return false
-           }) {
-            statusMessage = "Those windows are already in the same group."
-            return DragDropResult(message: statusMessage ?? "Those windows are already grouped", succeeded: false)
-        }
-
-        if targetGroup == nil {
-            targetGroup = TabGroup(
-                name: "\(target.appName) Group",
-                displayIdentifier: displayIdentifier(for: target.bounds),
-                bounds: target.bounds,
-                members: [target.reference, source.reference],
-                selectedMemberID: target.reference.id
-            )
-        } else if var group = targetGroup {
-            detach(source, fromOtherGroupsExcept: group.id)
-            if let existingTarget = group.members.first(where: { member in
-                if case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) {
-                    return live.id == target.id
-                }
-                return false
-            }) {
-                group.selectedMemberID = existingTarget.id
-            } else {
-                group.members.append(target.reference)
-                group.selectedMemberID = target.reference.id
-            }
-            group.members.append(source.reference)
-            group.bounds = target.bounds
-            targetGroup = group
-        }
-        guard let group = targetGroup else {
-            return DragDropResult(message: "Couldn’t identify the target group", succeeded: false)
-        }
-        detach(source, fromOtherGroupsExcept: group.id)
-
-        // Move the background member first and the drop target last so it stays visible.
-        for member in group.members where member.id != group.selectedMemberID {
-            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) else { continue }
-            if live.id != source.id && live.id != target.id { _ = live.window.apply(group.bounds) }
-        }
-        _ = source.window.apply(group.bounds)
-        _ = target.window.apply(group.bounds)
-        if let selected = group.members.first(where: { $0.id == group.selectedMemberID }),
-           let live = (try? windowController.resolve(selected)) { live.window.raise() }
-        do {
-            try store.upsert(group)
-            show(group)
-            statusMessage = "Window group created."
-            return DragDropResult(message: "Grouped \(source.appName) with \(target.appName)", succeeded: true)
-        } catch {
-            statusMessage = error.localizedDescription
-            return DragDropResult(message: error.localizedDescription, succeeded: false)
-        }
-    }
-
     private func detach(_ window: DiscoveredWindow, fromOtherGroupsExcept keepID: UUID) {
         for var group in store.groups where group.id != keepID {
             let before = group.members.count
@@ -205,10 +166,15 @@ final class GroupCoordinator: ObservableObject {
             guard before != group.members.count else { continue }
             if group.members.isEmpty {
                 try? store.removeGroup(id: group.id)
-                strip.hide()
+                strip.hide(groupID: group.id)
             } else {
                 if !group.members.contains(where: { $0.id == group.selectedMemberID }) { group.selectedMemberID = group.members.first?.id }
-                try? store.upsert(group)
+                do {
+                    try store.upsert(group)
+                    restore(group)
+                } catch {
+                    statusMessage = error.localizedDescription
+                }
             }
         }
     }
@@ -237,11 +203,17 @@ final class GroupCoordinator: ObservableObject {
             changed = true
         }
         guard !availableMemberIDs.isEmpty else {
-            strip.hide()
+            strip.hide(groupID: group.id)
             if changed { try? store.upsert(group) }
             return
         }
         if changed { try? store.upsert(group) }
+        for member in group.members where member.id != group.selectedMemberID {
+            guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) else { continue }
+            if let actual = live.window.apply(group.bounds) {
+                updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
+            }
+        }
         guard let selectedID = group.selectedMemberID,
               let selected = group.members.first(where: { $0.id == selectedID }),
               case .matched(let live) = WindowReferenceMatcher.match(selected, among: availableWindows) else { return }
@@ -260,7 +232,6 @@ final class GroupCoordinator: ObservableObject {
             if statusMessage?.localizedCaseInsensitiveContains("accessibility") == true {
                 statusMessage = nil
             }
-            dragMonitor?.start()
             restoreAvailableGroups()
         }
         refreshAvailableWindows()
@@ -270,9 +241,17 @@ final class GroupCoordinator: ObservableObject {
                   let current = windowController.currentBounds(selected),
                   abs(current.x - group.bounds.x) + abs(current.y - group.bounds.y)
                     + abs(current.width - group.bounds.width) + abs(current.height - group.bounds.height) > 3 else { continue }
-            let constrained = abs(current.width - group.bounds.width) + abs(current.height - group.bounds.height) > 4
+            var constrained = abs(current.width - group.bounds.width) + abs(current.height - group.bounds.height) > 4
             group.bounds = current
             updateReference(selectedID, in: &group) { $0.lastKnownBounds = current }
+            for member in group.members where member.id != selectedID {
+                guard case .matched(let live) = WindowReferenceMatcher.match(member, among: availableWindows) else { continue }
+                guard let actual = live.window.apply(current) else { continue }
+                let delta = abs(actual.x - current.x) + abs(actual.y - current.y)
+                    + abs(actual.width - current.width) + abs(actual.height - current.height)
+                if delta > 4 { constrained = true }
+                updateReference(member.id, in: &group) { $0.lastKnownBounds = actual }
+            }
             try? store.upsert(group)
             if constrained { statusMessage = "An app constrained its window size. The group now uses the accepted size." }
             show(group)
