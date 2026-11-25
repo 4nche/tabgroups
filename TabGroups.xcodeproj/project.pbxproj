@@ -1,0 +1,90 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		A10000000000000000000001 /* TabGroupsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* TabGroupsApp.swift */; };
+		A10000000000000000000002 /* StatusMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* StatusMenuView.swift */; };
+		A10000000000000000000003 /* WindowReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* WindowReference.swift */; };
+		A10000000000000000000004 /* TabGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* TabGroup.swift */; };
+		A10000000000000000000005 /* GroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* GroupStore.swift */; };
+		A10000000000000000000006 /* AccessibilityPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* AccessibilityPermission.swift */; };
+		A10000000000000000000007 /* AXWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* AXWindow.swift */; };
+		A10000000000000000000008 /* WindowCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* WindowCatalog.swift */; };
+		A10000000000000000000009 /* WindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* WindowController.swift */; };
+		A10000000000000000000010 /* TabStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* TabStripView.swift */; };
+		A10000000000000000000011 /* TabStripPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* TabStripPanel.swift */; };
+		A10000000000000000000012 /* TabStripCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* TabStripCoordinator.swift */; };
+		A10000000000000000000013 /* WindowDragMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* WindowDragMonitor.swift */; };
+		A10000000000000000000014 /* GroupCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* GroupCoordinator.swift */; };
+		A10000000000000000000015 /* WindowRestorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* WindowRestorer.swift */; };
+		A10000000000000000000016 /* PermissionHelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* PermissionHelpView.swift */; };
+		A10000000000000000000017 /* UnmatchedWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* UnmatchedWindowView.swift */; };
+		B10000000000000000000001 /* GroupStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* GroupStoreTests.swift */; };
+		B10000000000000000000002 /* WindowReferenceMatchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* WindowReferenceMatchingTests.swift */; };
+		B10000000000000000000004 /* TabGroups.app in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* TabGroups.app */; };
+
+		A20000000000000000000001 /* TabGroupsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroupsApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* StatusMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusMenuView.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* WindowReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowReference.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* TabGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroup.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* GroupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000006 /* AccessibilityPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityPermission.swift; sourceTree = "<group>"; };
+		A20000000000000000000007 /* AXWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXWindow.swift; sourceTree = "<group>"; };
+		A20000000000000000000008 /* WindowCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCatalog.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* WindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowController.swift; sourceTree = "<group>"; };
+		A20000000000000000000010 /* TabStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripView.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* TabStripPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripPanel.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* TabStripCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripCoordinator.swift; sourceTree = "<group>"; };
+		A20000000000000000000013 /* WindowDragMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDragMonitor.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* GroupCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupCoordinator.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* WindowRestorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowRestorer.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* PermissionHelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionHelpView.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* UnmatchedWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnmatchedWindowView.swift; sourceTree = "<group>"; };
+		A20000000000000000000020 /* TabGroups.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TabGroups.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B20000000000000000000001 /* GroupStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupStoreTests.swift; sourceTree = "<group>"; };
+		B20000000000000000000002 /* WindowReferenceMatchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowReferenceMatchingTests.swift; sourceTree = "<group>"; };
+		B20000000000000000000003 /* TabGroupsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TabGroupsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+
+		A30000000000000000000001 = {isa = PBXGroup; children = (A30000000000000000000002, A30000000000000000000003, B30000000000000000000001, ); sourceTree = "<group>"; };
+		A30000000000000000000002 /* TabGroups */ = {isa = PBXGroup; path = TabGroups; sourceTree = "<group>"; children = (A30000000000000000000004, A30000000000000000000005, A30000000000000000000006, A30000000000000000000007, A30000000000000000000008, ); };
+		A30000000000000000000003 /* Products */ = {isa = PBXGroup; name = Products; sourceTree = "<group>"; children = (A20000000000000000000020, B20000000000000000000003, ); };
+		A30000000000000000000004 /* Models */ = {isa = PBXGroup; path = Models; sourceTree = "<group>"; children = (A20000000000000000000003, A20000000000000000000004, ); };
+		A30000000000000000000005 /* Persistence */ = {isa = PBXGroup; path = Persistence; sourceTree = "<group>"; children = (A20000000000000000000005, ); };
+		A30000000000000000000006 /* WindowControl */ = {isa = PBXGroup; path = WindowControl; sourceTree = "<group>"; children = (A20000000000000000000006, A20000000000000000000007, A20000000000000000000008, A20000000000000000000009, ); };
+		A30000000000000000000007 /* TabStrip */ = {isa = PBXGroup; path = TabStrip; sourceTree = "<group>"; children = (A20000000000000000000010, A20000000000000000000011, A20000000000000000000012, ); };
+		A30000000000000000000008 /* Interaction, Lifecycle, Settings */ = {isa = PBXGroup; path = .; sourceTree = "<group>"; children = (A30000000000000000000009, A30000000000000000000010, A30000000000000000000011, A20000000000000000000001, A20000000000000000000002, ); };
+		A30000000000000000000009 /* Interaction */ = {isa = PBXGroup; path = Interaction; sourceTree = "<group>"; children = (A20000000000000000000013, A20000000000000000000014, ); };
+		A30000000000000000000010 /* Lifecycle */ = {isa = PBXGroup; path = Lifecycle; sourceTree = "<group>"; children = (A20000000000000000000015, ); };
+		A30000000000000000000011 /* Settings */ = {isa = PBXGroup; path = Settings; sourceTree = "<group>"; children = (A20000000000000000000016, A20000000000000000000017, ); };
+		B30000000000000000000001 /* TabGroupsTests */ = {isa = PBXGroup; path = TabGroupsTests; sourceTree = "<group>"; children = (B20000000000000000000001, B20000000000000000000002, ); };
+
+		A40000000000000000000001 /* TabGroups */ = {isa = PBXNativeTarget; buildConfigurationList = A50000000000000000000002; buildPhases = (A60000000000000000000001, A60000000000000000000002, A60000000000000000000003, ); buildRules = (); dependencies = (); name = TabGroups; productName = TabGroups; productReference = A20000000000000000000020; productType = "com.apple.product-type.application"; };
+		B40000000000000000000001 /* TabGroupsTests */ = {isa = PBXNativeTarget; buildConfigurationList = B50000000000000000000002; buildPhases = (B60000000000000000000001, B60000000000000000000002, B60000000000000000000003, ); buildRules = (); dependencies = (B80000000000000000000001, ); name = TabGroupsTests; productName = TabGroupsTests; productReference = B20000000000000000000003; productType = "com.apple.product-type.bundle.unit-test"; };
+
+		A50000000000000000000001 /* Project configuration list */ = {isa = XCConfigurationList; buildConfigurations = (A80000000000000000000001, A80000000000000000000002, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A50000000000000000000002 /* App configuration list */ = {isa = XCConfigurationList; buildConfigurations = (A80000000000000000000003, A80000000000000000000004, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		B50000000000000000000002 /* Test configuration list */ = {isa = XCConfigurationList; buildConfigurations = (B80000000000000000000002, B80000000000000000000003, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+
+		A60000000000000000000001 /* App Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000009, A10000000000000000000010, A10000000000000000000011, A10000000000000000000012, A10000000000000000000013, A10000000000000000000014, A10000000000000000000015, A10000000000000000000016, A10000000000000000000017, ); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000002 /* App Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000003 /* App Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		B60000000000000000000001 /* Test Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (B10000000000000000000001, B10000000000000000000002, ); runOnlyForDeploymentPostprocessing = 0; };
+		B60000000000000000000002 /* Test Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (B10000000000000000000004, ); runOnlyForDeploymentPostprocessing = 0; };
+		B60000000000000000000003 /* Test Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+
+		B70000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 1600; TargetAttributes = {A40000000000000000000001 = {CreatedOnToolsVersion = 16.0; }; B40000000000000000000001 = {CreatedOnToolsVersion = 16.0; TestTargetID = A40000000000000000000001; }; }; }; buildConfigurationList = A50000000000000000000001; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base, ); mainGroup = A30000000000000000000001; productRefGroup = A30000000000000000000003; projectDirPath = ""; projectRoot = ""; targets = (A40000000000000000000001, B40000000000000000000001, ); };
+
+		B80000000000000000000001 /* App target dependency */ = {isa = PBXTargetDependency; target = A40000000000000000000001; targetProxy = B90000000000000000000001; };
+		B90000000000000000000001 /* App target proxy */ = {isa = PBXContainerItemProxy; containerPortal = B70000000000000000000001; proxyType = 1; remoteGlobalIDString = A40000000000000000000001; remoteInfo = TabGroups; };
+
+		A80000000000000000000001 /* Project Debug */ = {isa = XCBuildConfiguration; buildSettings = {MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx; SWIFT_VERSION = 5.0; }; name = Debug; };
+		A80000000000000000000002 /* Project Release */ = {isa = XCBuildConfiguration; buildSettings = {MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx; SWIFT_VERSION = 5.0; }; name = Release; };
+		A80000000000000000000003 /* App Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_LSUIElement = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; PRODUCT_BUNDLE_IDENTIFIER = com.4nche.TabGroups; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; }; name = Debug; };
+		A80000000000000000000004 /* App Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_LSUIElement = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; PRODUCT_BUNDLE_IDENTIFIER = com.4nche.TabGroups; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; }; name = Release; };
+		B80000000000000000000002 /* Test Debug */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; PRODUCT_BUNDLE_IDENTIFIER = com.4nche.TabGroupsTests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TabGroups.app/Contents/MacOS/TabGroups"; }; name = Debug; };
+		B80000000000000000000003 /* Test Release */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; PRODUCT_BUNDLE_IDENTIFIER = com.4nche.TabGroupsTests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TabGroups.app/Contents/MacOS/TabGroups"; }; name = Release; };
+	};
+	rootObject = B70000000000000000000001;
+}
