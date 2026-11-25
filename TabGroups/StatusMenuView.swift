@@ -15,6 +15,9 @@ struct StatusMenuView: View {
             AccessibilityPermission.openSettings()
         }
 
+        Text("Enter Tab Group Mode: Shift, ~, Shift, ~, Shift, ~")
+            .font(.caption)
+
         Divider()
 
         Button("Quit Tab Groups") {
@@ -34,7 +37,7 @@ struct GroupsWindowView: View {
                 ContentUnavailableView {
                     Label("No tab groups yet", systemImage: "rectangle.on.rectangle")
                 } description: {
-                    Text("Hold Shift and drag one app window onto another to create a group.")
+                    Text("Enter Tab Group Mode with Shift, ~, Shift, ~, Shift, ~. Then drag one app window onto another; press Escape to exit mode.")
                 }
             } else {
                 List(store.groups) { group in
