@@ -1,11 +1,15 @@
 import AppKit
 import ApplicationServices
 import SwiftUI
+import OSLog
 
 /// One group as Mission Control should present it: the window it shows and the tabs behind it.
 struct MissionControlGroup {
     let groupID: UUID
+    let name: String
+    let windowNumber: UInt32?
     let windowTitle: String?
+    let allowsTitleMatch: Bool
     let windowBounds: WindowBounds
     let tabs: [TabItem]
     let selectedID: UUID?
@@ -22,6 +26,7 @@ private let dockCallback: AXObserverCallback = { _, _, notification, refcon in
 /// hint of the stacked windows behind it. The Dock publishes each thumbnail's place on screen through
 /// Accessibility; that is how the bar finds its window.
 final class MissionControlOverlay {
+    var onOverviewOpened: () -> Void = {}
     var groups: () -> [MissionControlGroup] = { [] }
     var onSelect: (_ groupID: UUID, _ memberID: UUID) -> Void = { _, _ in }
 
@@ -32,8 +37,28 @@ final class MissionControlOverlay {
     private var observer: AXObserver?
     private var dockApp: AXUIElement?
     private var panels: [UUID: MissionControlTabPanel] = [:]
+    private var overviewScreen: NSScreen?
+    private lazy var switcher: NSPanel = {
+        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hidesOnDeactivate = false
+        panel.contentView = OverlayHostingView(rootView: GroupSwitcher(groups: [], choose: { _, _ in }))
+        return panel
+    }()
     private var refreshTimer: Timer?
     private var idleTimer: Timer?
+    private let logger = Logger(subsystem: "com.4nche.TabGroups", category: "MissionControl")
+    private var lastDiagnostic = ""
+    private func report(_ message: String) {
+        guard message != lastDiagnostic else { return }
+        lastDiagnostic = message
+        logger.notice("\(message, privacy: .public)")
+    }
+
     private var misses = 0
     private var dockLaunchToken: NSObjectProtocol?
 
@@ -57,6 +82,7 @@ final class MissionControlOverlay {
     }
 
     fileprivate func dockPosted(_ notification: String) {
+        report("Dock notification " + notification)
         switch notification {
         case "AXExposeShowAllWindows", "AXExposeShowFrontWindows": begin()
         default: end()
@@ -86,6 +112,8 @@ final class MissionControlOverlay {
 
     private func begin() {
         guard refreshTimer == nil else { return }
+        onOverviewOpened()
+        overviewScreen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         misses = 0
         refresh()
         // Thumbnails slide into place and move again when the pointer visits the Spaces bar.
@@ -97,12 +125,14 @@ final class MissionControlOverlay {
     private func end() {
         refreshTimer?.invalidate()
         refreshTimer = nil
+        switcher.orderOut(nil)
         panels.values.forEach { $0.orderOut(nil) }
     }
 
     private func refresh() {
         let thumbnails = currentThumbnails()
-        guard !thumbnails.isEmpty else {
+        if thumbnails.isEmpty && !dockShowsOverview() {
+            switcher.orderOut(nil)
             misses += 1
             if misses >= Self.missesBeforeClosing { end() }
             return
@@ -111,7 +141,8 @@ final class MissionControlOverlay {
         if UserDefaults.standard.bool(forKey: "MissionControlDebug") { Self.writeDebug(thumbnails, groups()) }
         var used = Set<Int>()
         var shown = Set<UUID>()
-        for group in groups() where group.tabs.count > 1 {
+        let currentGroups = groups()
+        for group in currentGroups where group.tabs.count > 1 {
             guard let index = Self.bestThumbnail(for: group, among: thumbnails, excluding: used) else { continue }
             used.insert(index)
             shown.insert(group.groupID)
@@ -121,7 +152,26 @@ final class MissionControlOverlay {
                 self?.choose(groupID: group.groupID, memberID: memberID)
             }
         }
+        let unmatched = currentGroups.filter { $0.tabs.count > 1 && !shown.contains($0.groupID) }
+        showSwitcher(for: unmatched)
+        report("Thumbnails \(thumbnails.count), eligible groups \(currentGroups.count), shown panels \(shown.count), fixed switcher groups \(unmatched.count)")
         panels.filter { !shown.contains($0.key) }.values.forEach { $0.orderOut(nil) }
+    }
+
+    private func showSwitcher(for groups: [MissionControlGroup]) {
+        guard !groups.isEmpty, let area = overviewScreen?.visibleFrame,
+              let host = switcher.contentView as? OverlayHostingView<GroupSwitcher> else {
+            switcher.orderOut(nil)
+            return
+        }
+        host.rootView = GroupSwitcher(groups: groups) { [weak self] group, tab in
+            self?.choose(groupID: group, memberID: tab)
+        }
+        let width = min(520, area.width - 24)
+        let height = min(CGFloat(groups.count * 52 + 20), area.height * 0.4)
+        let frame = NSRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height)
+        if switcher.frame != frame { switcher.setFrame(frame, display: true) }
+        if !switcher.isVisible { switcher.orderFrontRegardless() }
     }
 
     private func choose(groupID: UUID, memberID: UUID) {
@@ -145,7 +195,15 @@ final class MissionControlOverlay {
 
     // MARK: - Reading the Dock
 
+    static func windowNumber(of element: AXUIElement) -> UInt32? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, "AXWindowNumber" as CFString, &value) == .success,
+              let number = value as? NSNumber, number.uint32Value != 0 else { return nil }
+        return number.uint32Value
+    }
+
     struct Thumbnail {
+        let windowNumber: UInt32?
         let title: String
         let frame: WindowBounds
     }
@@ -154,39 +212,81 @@ final class MissionControlOverlay {
     private func dockShowsOverview() -> Bool {
         guard let dockApp else { return false }
         let children = Self.children(of: dockApp)
-        return children.contains { Self.role(of: $0) != "AXList" }
+        let roles = children.map { Self.role(of: $0) ?? "unknown" }
+        report("Dock child roles: " + roles.joined(separator: ","))
+        return roles.contains { $0 != "AXList" }
     }
+
+    private var overviewRoleSummary = ""
 
     private func currentThumbnails() -> [Thumbnail] {
         guard let dockApp else { return [] }
         var found: [Thumbnail] = []
+        var roles: [String: Int] = [:]
         for child in Self.children(of: dockApp) where Self.role(of: child) != "AXList" {
-            Self.collect(in: child, depth: 0, into: &found)
+            Self.collect(in: child, depth: 0, into: &found, roles: &roles)
         }
+        overviewRoleSummary = roles.keys.sorted().map { "\($0)=\(roles[$0, default: 0])" }.joined(separator: ", ")
         return found
     }
 
-    private static func collect(in element: AXUIElement, depth: Int, into found: inout [Thumbnail]) {
-        guard depth < 8 else { return }
-        if role(of: element) == "AXButton", let frame = frame(of: element),
-           frame.width > 60, frame.height > 40 {
-            found.append(Thumbnail(title: string(element, kAXTitleAttribute) ?? "", frame: frame))
-            return
+    private static func collect(in element: AXUIElement, depth: Int, into found: inout [Thumbnail],
+                                roles: inout [String: Int]) {
+        guard depth < 16 else { return }
+        let role = role(of: element) ?? "unknown"
+        let bounds = frame(of: element)
+        let number = windowNumber(of: element)
+        let title = string(element, kAXTitleAttribute) ?? ""
+        let label = title.isEmpty ? (string(element, kAXDescriptionAttribute) ?? "") : title
+        let geometry = bounds.map { "\(Int($0.width))x\(Int($0.height))" } ?? "no-frame"
+        roles["\(role) \(geometry) \(label.isEmpty ? "unlabelled" : "labelled")", default: 0] += 1
+
+        if let bounds, bounds.width > 0, bounds.height > 0, number != nil || !label.isEmpty {
+            found.append(Thumbnail(windowNumber: number, title: label, frame: bounds))
         }
-        children(of: element).forEach { collect(in: $0, depth: depth + 1, into: &found) }
+        var descendants = children(of: element)
+        if descendants.isEmpty && (depth == 0 || role == "AXGroup") {
+            var names: CFArray?
+            let status = AXUIElementCopyAttributeNames(element, &names)
+            let advertised = (names as? [String]) ?? []
+            var details: [String] = []
+            for key in ["AXChildren", "AXVisibleChildren", "AXChildrenInNavigationOrder", "AXContents"] {
+                var value: CFTypeRef?
+                let result = AXUIElementCopyAttributeValue(element, key as CFString, &value)
+                if result == .success, let items = value as? [AXUIElement] {
+                    details.append("\(key)[\(items.count)]")
+                    for item in items where !descendants.contains(where: { CFEqual($0, item) }) {
+                        descendants.append(item)
+                    }
+                } else {
+                    details.append("\(key) status=\(result.rawValue)")
+                }
+            }
+            if depth == 0 && descendants.isEmpty {
+                let attributes = status == .success ? advertised.sorted().joined(separator: ",") : "status=\(status.rawValue)"
+                roles["Overview root attributes [\(attributes)] " + details.joined(separator: " "), default: 0] += 1
+            }
+        }
+        for child in descendants {
+            collect(in: child, depth: depth + 1, into: &found, roles: &roles)
+        }
     }
 
-    /// The thumbnail with the group's window title; among several, the one whose shape matches best.
     static func bestThumbnail(for group: MissionControlGroup, among thumbnails: [Thumbnail],
                               excluding used: Set<Int>) -> Int? {
-        let aspect = group.windowBounds.width / max(group.windowBounds.height, 1)
-        let candidates = thumbnails.indices.filter { index in
-            !used.contains(index) && !(group.windowTitle ?? "").isEmpty && thumbnails[index].title == group.windowTitle
+        if let number = group.windowNumber {
+            let exact = thumbnails.indices.filter { thumbnails[$0].windowNumber == number }
+            if let index = exact.first {
+                return exact.count == 1 && !used.contains(index) ? index : nil
+            }
         }
-        return candidates.min { a, b in
-            let frameA = thumbnails[a].frame, frameB = thumbnails[b].frame
-            return abs(frameA.width / max(frameA.height, 1) - aspect) < abs(frameB.width / max(frameB.height, 1) - aspect)
+        guard group.allowsTitleMatch, let title = group.windowTitle, !title.isEmpty else { return nil }
+        let matches = thumbnails.indices.filter { thumbnails[$0].title == title }
+        if let index = matches.first, group.windowNumber != nil, thumbnails[index].windowNumber != nil {
+            return nil
         }
+        guard matches.count == 1, let index = matches.first, !used.contains(index) else { return nil }
+        return index
     }
 
     private static func children(of element: AXUIElement) -> [AXUIElement] {
@@ -295,6 +395,37 @@ struct MissionControlTabsView: View {
         UnevenRoundedRectangle(topLeadingRadius: 5, topTrailingRadius: 5)
             .fill(Color.white.opacity(opacity))
             .frame(width: width, height: 4)
+    }
+}
+
+private struct GroupSwitcher: View {
+    let groups: [MissionControlGroup]
+    let choose: (UUID, UUID) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(groups, id: \.groupID) { group in
+                    HStack {
+                        Text(group.name).font(.headline).lineLimit(1)
+                            .frame(width: 108, alignment: .leading)
+                        ScrollView(.horizontal) {
+                            HStack {
+                                ForEach(group.tabs) { tab in
+                                    MissionControlTabChip(tab: tab, isSelected: group.selectedID == tab.id) {
+                                        choose(group.groupID, tab.id)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(height: 52)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 

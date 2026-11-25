@@ -21,6 +21,9 @@ struct StatusMenuView: View {
 
         Divider()
 
+        SettingsLink { Text("Settings…") }
+            .keyboardShortcut(",")
+
         Button("Quit Tab Groups") {
             NSApplication.shared.terminate(nil)
         }

@@ -9,6 +9,19 @@ final class GroupCoordinator: ObservableObject {
 
     let store: GroupStore
     let catalog: WindowCatalog
+    @Published var showTabSwitcher = (UserDefaults.standard.object(forKey: "showMissionControlTabSwitcher") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(showTabSwitcher, forKey: "showMissionControlTabSwitcher") }
+    }
+    @Published var showAllWindowsInMissionControl = UserDefaults.standard.bool(forKey: "showAllWindowsInMissionControl") {
+        didSet {
+            UserDefaults.standard.set(showAllWindowsInMissionControl, forKey: "showAllWindowsInMissionControl")
+            if showAllWindowsInMissionControl {
+                revealGroupedWindowsForOverview()
+            } else {
+                for group in store.groups { concealUnselected(in: group) }
+            }
+        }
+    }
     @Published var statusMessage: String?
     @Published var availableWindows: [DiscoveredWindow] = []
 
@@ -31,6 +44,8 @@ final class GroupCoordinator: ObservableObject {
     private var windowScanInProgress = false
     private var windowScanCompletions: [([DiscoveredWindow]) -> Void] = []
     private var hasRaisedOnRestore = false
+    private var minimizedWindows: [AXWindow] = []
+    private var hiddenApps: [pid_t: NSRunningApplication] = [:]
     private var started = false
 
     init(store: GroupStore = GroupStore(), catalog: WindowCatalog = WindowCatalog()) {
@@ -70,6 +85,7 @@ final class GroupCoordinator: ObservableObject {
         }
         dragGrouping = ShiftDragMonitor(coordinator: self)
         dragGrouping?.start()
+        missionControl.onOverviewOpened = { [weak self] in self?.revealGroupedWindowsForOverview() }
         missionControl.groups = { [weak self] in self?.missionControlGroups() ?? [] }
         missionControl.onSelect = { [weak self] groupID, memberID in self?.select(groupID: groupID, memberID: memberID) }
         missionControl.start()
@@ -385,12 +401,17 @@ final class GroupCoordinator: ObservableObject {
 
     /// Each group's visible window and tabs, for the bar laid over Mission Control.
     private func missionControlGroups() -> [MissionControlGroup] {
-        store.groups.compactMap { group in
+        guard showTabSwitcher else { return [] }
+        return store.groups.compactMap { group in
             guard let selected = group.members.first(where: { $0.id == group.selectedMemberID }),
                   let live = liveWindow(for: selected),
                   let bounds = live.window.bounds() else { return nil }
-            return MissionControlGroup(groupID: group.id,
-                                       windowTitle: live.window.readString(kAXTitleAttribute as CFString),
+            let title = live.window.readString(kAXTitleAttribute as CFString)
+            let sameTitle = availableWindows.filter { $0.reference.title == title }
+            let uniqueTitle = sameTitle.count == 1 && sameTitle.first?.window.isSameWindow(as: live.window.element) == true
+            return MissionControlGroup(groupID: group.id, name: group.name,
+                                       windowNumber: MissionControlOverlay.windowNumber(of: live.window.element),
+                                       windowTitle: title, allowsTitleMatch: uniqueTitle,
                                        windowBounds: bounds, tabs: tabs(for: group),
                                        selectedID: group.selectedMemberID)
         }
@@ -452,7 +473,8 @@ extension GroupCoordinator {
     func concealUnselected(in group: TabGroup, after delay: TimeInterval = concealDelay) {
         let groupID = group.id
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, let current = self.store.groups.first(where: { $0.id == groupID }),
+            guard let self, !self.showAllWindowsInMissionControl,
+                  let current = self.store.groups.first(where: { $0.id == groupID }),
                   !self.isMoving(groupID: groupID) else { return }
             for member in current.members where member.id != current.selectedMemberID {
                 guard let live = self.liveWindow(for: member) else { continue }
@@ -462,22 +484,40 @@ extension GroupCoordinator {
     }
 
     func reveal(_ window: AXWindow) {
-        if let app = NSRunningApplication(processIdentifier: window.processID), app.isHidden { app.unhide() }
-        if window.isMinimized { window.setMinimized(false) }
+        if let app = NSRunningApplication(processIdentifier: window.processID), !app.isHidden || app.unhide() {
+            hiddenApps.removeValue(forKey: window.processID)
+        }
+        if !window.isMinimized || window.setMinimized(false) {
+            minimizedWindows.removeAll { $0.isSameWindow(as: window.element) }
+        }
     }
 
-    /// Puts every grouped window back on screen; used when Tab Groups quits.
+    private func revealGroupedWindowsForOverview() {
+        guard showAllWindowsInMissionControl else { return }
+        for group in store.groups {
+            for member in group.members {
+                if let live = liveWindow(for: member) { reveal(live.window) }
+            }
+        }
+    }
+
+    /// Restores visibility changes made by Tab Groups.
     func revealAll() {
-        store.groups.flatMap(\.members).compactMap { liveWindow(for: $0)?.window }.forEach(reveal)
+        hiddenApps = hiddenApps.filter { _, app in
+            !app.isTerminated && app.isHidden && !app.unhide()
+        }
+        minimizedWindows.removeAll { window in
+            !window.isMinimized || window.setMinimized(false)
+        }
     }
 
     private func conceal(_ window: AXWindow) {
         guard let app = NSRunningApplication(processIdentifier: window.processID),
               !app.isHidden, !window.isMinimized else { return }
         if canHide(app) {
-            app.hide()
-        } else {
-            window.setMinimized(true)
+            if app.hide() { hiddenApps[app.processIdentifier] = app }
+        } else if window.setMinimized(true), !minimizedWindows.contains(where: { $0.isSameWindow(as: window.element) }) {
+            minimizedWindows.append(window)
         }
     }
 
@@ -490,7 +530,9 @@ extension GroupCoordinator {
                 .filter { $0.processID == app.processIdentifier }
         }
         guard !concealable.isEmpty else { return false }
-        return AXWindow.windows(ofProcess: app.processIdentifier).allSatisfy { window in
+        let windows = AXWindow.windows(ofProcess: app.processIdentifier)
+        guard !windows.isEmpty else { return false }
+        return windows.allSatisfy { window in
             if window.isMinimized || window.isFinderDesktop { return true }
             if let bounds = window.bounds(), bounds.width <= 80 || bounds.height <= 60 { return true }
             return concealable.contains { $0.isSameWindow(as: window.element) }

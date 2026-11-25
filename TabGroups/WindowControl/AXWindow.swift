@@ -151,9 +151,10 @@ extension AXWindow {
         return (value as? Bool) ?? false
     }
 
-    func setMinimized(_ minimized: Bool) {
-        _ = AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString,
-                                         minimized ? kCFBooleanTrue : kCFBooleanFalse)
+    @discardableResult
+    func setMinimized(_ minimized: Bool) -> Bool {
+        AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString,
+                                         minimized ? kCFBooleanTrue : kCFBooleanFalse) == .success
     }
 
     /// Every window the process lists right now, read fresh.
