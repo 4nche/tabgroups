@@ -38,11 +38,6 @@ struct TabStripView: View {
                             in: RoundedRectangle(cornerRadius: 7))
                 .contentShape(RoundedRectangle(cornerRadius: 7))
                 .onTapGesture { onSelect(member.id) }
-                .gesture(DragGesture(minimumDistance: 10).onEnded { gesture in
-                    if abs(gesture.translation.width) > 70 || abs(gesture.translation.height) > 70 {
-                        onRemove(member.id)
-                    }
-                })
             }
         }
         .padding(5)
