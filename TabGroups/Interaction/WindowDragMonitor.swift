@@ -142,8 +142,8 @@ final class WindowDragMonitor {
             guard let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue, layer == 0,
                   let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
                   pid != ProcessInfo.processInfo.processIdentifier,
-                  let rawBounds = info[kCGWindowBounds as String] as? CFDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: rawBounds), bounds.contains(axPoint) else { continue }
+                  let rawBounds = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: rawBounds as CFDictionary), bounds.contains(axPoint) else { continue }
             return windows
                 .filter { $0.reference.processID == pid && contains(axPoint, in: $0.bounds) }
                 .min { boundsDistance($0.bounds, to: bounds) < boundsDistance($1.bounds, to: bounds) }
