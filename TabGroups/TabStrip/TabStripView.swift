@@ -15,22 +15,6 @@ struct TabStripView: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 28)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 3)
-                        .onChanged { value in
-                            let delta = CGSize(
-                                width: value.translation.width - lastDragTranslation.width,
-                                height: value.translation.height - lastDragTranslation.height
-                            )
-                            lastDragTranslation = value.translation
-                            onMove(delta)
-                        }
-                        .onEnded { _ in
-                            lastDragTranslation = .zero
-                            onMoveEnded()
-                        }
-                )
                 .help("Drag to move the window group")
 
             ForEach(group.members) { member in
@@ -69,5 +53,20 @@ struct TabStripView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(0.12)))
         .fixedSize(horizontal: true, vertical: true)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 3)
+                .onChanged { value in
+                    let delta = CGSize(
+                        width: value.translation.width - lastDragTranslation.width,
+                        height: value.translation.height - lastDragTranslation.height
+                    )
+                    lastDragTranslation = value.translation
+                    onMove(delta)
+                }
+                .onEnded { _ in
+                    lastDragTranslation = .zero
+                    onMoveEnded()
+                }
+        )
     }
 }
