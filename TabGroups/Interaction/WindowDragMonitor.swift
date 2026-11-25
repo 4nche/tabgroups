@@ -5,11 +5,17 @@ struct DragDropResult {
     var succeeded: Bool
 }
 
+private struct WindowHit {
+    let window: DiscoveredWindow
+    let windowNumber: CGWindowID
+}
+
 final class WindowDragMonitor {
     private let catalog: WindowCatalog
     private let feedback = DragFeedbackPanel()
     private var monitors: [Any] = []
     private var source: DiscoveredWindow?
+    private var sourceWindowNumber: CGWindowID?
     private var dragWindows: [DiscoveredWindow] = []
     private var startedWithShift = false
     private var startPoint: NSPoint = .zero
@@ -39,6 +45,7 @@ final class WindowDragMonitor {
         monitors.forEach(NSEvent.removeMonitor)
         monitors.removeAll()
         source = nil
+        sourceWindowNumber = nil
         dragWindows = []
         feedback.hide()
     }
@@ -52,7 +59,9 @@ final class WindowDragMonitor {
             lastHoverHitTest = 0
             startPoint = NSEvent.mouseLocation
             dragWindows = catalog.scan()
-            source = window(at: startPoint)
+            let hit = window(at: startPoint)
+            source = hit?.window
+            sourceWindowNumber = hit?.windowNumber
             let message: String
             let kind: DragFeedbackKind
             if !AccessibilityPermission.isGranted {
@@ -78,8 +87,8 @@ final class WindowDragMonitor {
                 let now = ProcessInfo.processInfo.systemUptime
                 guard now - lastHoverHitTest >= 0.1 else { return }
                 lastHoverHitTest = now
-                let target = window(at: currentPoint)
-                let otherTarget = source.flatMap { source in target?.id == source.id ? nil : target }
+                let target = source.flatMap { _ in window(at: currentPoint, excluding: sourceWindowNumber)?.window }
+                let otherTarget = target
                 if otherTarget?.id != hoverTargetID {
                     hoverTargetID = otherTarget?.id
                     if let source, let target = otherTarget {
@@ -97,6 +106,7 @@ final class WindowDragMonitor {
         guard event.type == .leftMouseUp else { return }
         defer {
             source = nil
+            sourceWindowNumber = nil
             dragWindows = []
             startedWithShift = false
             dragMoved = false
@@ -109,7 +119,8 @@ final class WindowDragMonitor {
             feedback.present("Couldn’t identify the source window", kind: .warning, at: currentPoint, hideAfter: 2)
             return
         }
-        guard let target = window(at: currentPoint), target.id != source.id else {
+        guard let target = window(at: currentPoint, excluding: sourceWindowNumber)?.window,
+              target.id != source.id else {
             feedback.present("No other app window detected here", kind: .warning, at: currentPoint, hideAfter: 2)
             return
         }
@@ -121,7 +132,7 @@ final class WindowDragMonitor {
                          hideAfter: 2)
     }
 
-    private func window(at point: NSPoint) -> DiscoveredWindow? {
+    private func window(at point: NSPoint, excluding excludedWindowNumber: CGWindowID? = nil) -> WindowHit? {
         let windows = dragWindows
         // AX uses the primary display's top-left coordinate origin. Using the
         // hovered display's height works on a single display but offsets every
@@ -136,17 +147,23 @@ final class WindowDragMonitor {
         // to choose the window actually under the pointer, then resolve it to
         // the matching accessible window.
         guard let onScreen = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
-            return windows.first { contains(axPoint, in: $0.bounds) }
+            guard let window = windows.first(where: { contains(axPoint, in: $0.bounds) }) else { return nil }
+            return WindowHit(window: window, windowNumber: 0)
         }
         for info in onScreen {
             guard let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue, layer == 0,
                   let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
                   pid != ProcessInfo.processInfo.processIdentifier,
+                  let rawWindowNumber = info[kCGWindowNumber as String] as? NSNumber,
+                  let windowNumber = CGWindowID(exactly: rawWindowNumber.intValue),
+                  windowNumber != excludedWindowNumber,
                   let rawBounds = info[kCGWindowBounds as String] as? NSDictionary,
                   let bounds = CGRect(dictionaryRepresentation: rawBounds as CFDictionary), bounds.contains(axPoint) else { continue }
-            return windows
-                .filter { $0.reference.processID == pid && contains(axPoint, in: $0.bounds) }
-                .min { boundsDistance($0.bounds, to: bounds) < boundsDistance($1.bounds, to: bounds) }
+            let candidates = windows.filter { $0.reference.processID == pid && contains(axPoint, in: $0.bounds) }
+            guard let window = candidates.min(by: {
+                boundsDistance($0.bounds, to: bounds) < boundsDistance($1.bounds, to: bounds)
+            }) else { return nil }
+            return WindowHit(window: window, windowNumber: windowNumber)
         }
         return nil
     }
