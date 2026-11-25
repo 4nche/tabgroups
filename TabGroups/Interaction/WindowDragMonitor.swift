@@ -10,18 +10,57 @@ private struct WindowHit {
     let windowNumber: CGWindowID
 }
 
+private struct ModeActivationSequence {
+    private(set) var progress = 0
+    private var startedAt: TimeInterval?
+    private let interval: TimeInterval = 3
+
+    mutating func register(_ key: Key, at time: TimeInterval) -> Bool {
+        if let startedAt, time - startedAt > interval { reset() }
+
+        let expected: Key = progress.isMultiple(of: 2) ? .shift : .tilde
+        guard key == expected else {
+            reset()
+            if key == .shift {
+                startedAt = time
+                progress = 1
+            }
+            return false
+        }
+
+        if progress == 0 { startedAt = time }
+        progress += 1
+        if progress == 6 {
+            reset()
+            return true
+        }
+        return false
+    }
+
+    mutating func reset() {
+        progress = 0
+        startedAt = nil
+    }
+
+    enum Key { case shift, tilde }
+}
+
 final class WindowDragMonitor {
     private let catalog: WindowCatalog
     private let feedback = DragFeedbackPanel()
+    private let modeBanner = DragFeedbackPanel()
     private var monitors: [Any] = []
     private var source: DiscoveredWindow?
     private var sourceWindowNumber: CGWindowID?
     private var dragWindows: [DiscoveredWindow] = []
-    private var startedWithShift = false
+    private var isTrackingDrag = false
     private var startPoint: NSPoint = .zero
     private var dragMoved = false
     private var hoverTargetID: String?
     private var lastHoverHitTest = 0.0
+    private var activationSequence = ModeActivationSequence()
+    private var shiftIsDown = false
+    private var tabGroupModeActive = false
     private let onDrop: (DiscoveredWindow, DiscoveredWindow) -> DragDropResult
 
     init(catalog: WindowCatalog, onDrop: @escaping (DiscoveredWindow, DiscoveredWindow) -> DragDropResult) {
@@ -31,7 +70,7 @@ final class WindowDragMonitor {
 
     func start() {
         guard monitors.isEmpty else { return }
-        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .flagsChanged, .keyDown]
         if let monitor = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
             self?.handle(event)
         }) { monitors.append(monitor) }
@@ -47,13 +86,20 @@ final class WindowDragMonitor {
         source = nil
         sourceWindowNumber = nil
         dragWindows = []
+        tabGroupModeActive = false
         feedback.hide()
+        modeBanner.hide()
     }
 
     private func handle(_ event: NSEvent) {
+        if event.type == .flagsChanged || event.type == .keyDown {
+            handleKeyboard(event)
+            return
+        }
+
         if event.type == .leftMouseDown {
-            guard event.modifierFlags.contains(.shift) else { return }
-            startedWithShift = true
+            guard tabGroupModeActive else { return }
+            isTrackingDrag = true
             dragMoved = false
             hoverTargetID = nil
             lastHoverHitTest = 0
@@ -71,14 +117,14 @@ final class WindowDragMonitor {
                 message = "Dragging \(source.appName) — drop on another window"
                 kind = .active
             } else {
-                message = "Shift detected, but no app window was found"
+                message = "No app window found at drag start"
                 kind = .warning
             }
             feedback.present(message, kind: kind, at: startPoint)
             return
         }
 
-        guard startedWithShift else { return }
+        guard isTrackingDrag else { return }
         let currentPoint = NSEvent.mouseLocation
         if event.type == .leftMouseDragged {
             if hypot(currentPoint.x - startPoint.x, currentPoint.y - startPoint.y) > 12 { dragMoved = true }
@@ -108,7 +154,7 @@ final class WindowDragMonitor {
             source = nil
             sourceWindowNumber = nil
             dragWindows = []
-            startedWithShift = false
+            isTrackingDrag = false
             dragMoved = false
             hoverTargetID = nil
             lastHoverHitTest = 0
@@ -130,6 +176,41 @@ final class WindowDragMonitor {
                          kind: result.succeeded ? .success : .warning,
                          at: currentPoint,
                          hideAfter: 2)
+    }
+
+    private func handleKeyboard(_ event: NSEvent) {
+        if event.type == .flagsChanged {
+            let isDown = event.modifierFlags.contains(.shift)
+            let shiftWasPressed = isDown && !shiftIsDown
+            shiftIsDown = isDown
+            guard shiftWasPressed, !tabGroupModeActive else { return }
+            if activationSequence.register(.shift, at: event.timestamp) { activateTabGroupMode() }
+            return
+        }
+
+        if event.keyCode == 53 {
+            guard tabGroupModeActive else { activationSequence.reset(); return }
+            tabGroupModeActive = false
+            isTrackingDrag = false
+            source = nil
+            sourceWindowNumber = nil
+            dragWindows = []
+            feedback.hide()
+            modeBanner.presentAtTop("Tab Group Mode Off", kind: .active, hideAfter: 1.4)
+            return
+        }
+
+        if event.characters == "~", event.modifierFlags.contains(.shift), !tabGroupModeActive {
+            if activationSequence.register(.tilde, at: event.timestamp) { activateTabGroupMode() }
+        } else if !tabGroupModeActive {
+            activationSequence.reset()
+        }
+    }
+
+    private func activateTabGroupMode() {
+        activationSequence.reset()
+        tabGroupModeActive = true
+        modeBanner.presentAtTop("Tab Group Mode Active  •  Drag windows to group  •  Esc to exit", kind: .active)
     }
 
     private func window(at point: NSPoint, excluding excludedWindowNumber: CGWindowID? = nil) -> WindowHit? {
